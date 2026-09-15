@@ -54,7 +54,9 @@ export function BottomNav() {
                 aria-current={active ? 'page' : undefined}
                 className={cx(
                   'flex h-[58px] flex-col items-center justify-center gap-0.5 transition-colors',
-                  active ? 'text-accent' : 'text-faint active:text-dim',
+                  // `faint` is only 3:1 against the bar at 10px — too dim to
+                  // read at a glance. `dim` keeps the tabs quiet at ~6.4:1.
+                  active ? 'text-accent' : 'text-dim active:text-ink',
                 )}
               >
                 <Glyph name={item.label} active={active} />

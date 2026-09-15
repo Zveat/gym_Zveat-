@@ -13,7 +13,13 @@
   --color-surface3: #26262d;
   --color-ink: #f5f5f7;
   --color-dim: #8e8e93;
-  --color-faint: #5a5a61;
+  /**
+   * Tertiary text: set numbers, dates, separators. #5a5a61 measured 2.2–2.9:1
+   * against the surfaces it sits on — unreadable at the 10–11px it is used at.
+   * This clears 4.5:1 on bg and surface while staying a visible step below
+   * `dim`, so the hierarchy survives.
+   */
+  --color-faint: #80808a;
   --color-accent: #b6ff3b;
   --color-accent-ink: #0b0b0d;
   --color-progress: #34d97a;
@@ -35,88 +41,100 @@
   --text-display--letter-spacing: -0.04em;
 }
 
-:root {
-  --status-progress: #34d97a;
-  --status-warning: #ff9f0a;
-  --status-pain: #ff453a;
-  --status-info: #0a84ff;
-  --safe-top: env(safe-area-inset-top, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
+/**
+ * Element-level resets live in `@layer base`, not unlayered. Unlayered CSS
+ * outranks every cascade layer regardless of specificity, so a bare
+ * `button { color: inherit }` here silently beat `.text-accent-ink` in
+ * `@layer utilities` — the lime primary button rendered near-white text, and
+ * every button's `text-*`/`font-*` class was dead. Keep resets in a layer.
+ */
+@layer base {
+  :root {
+    --status-progress: #34d97a;
+    --status-warning: #ff9f0a;
+    --status-pain: #ff453a;
+    --status-info: #0a84ff;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    /**
+     * The home-indicator inset is ~34px on a notched iPhone. Reserving all of it
+     * under the tab bar left a visibly dead strip and pushed the bar up away
+     * from the thumb, so only the part that actually overlaps is kept.
+     */
+    --nav-safe-bottom: max(4px, calc(env(safe-area-inset-bottom, 0px) - 14px));
+    --nav-height: 58px;
+    color-scheme: dark;
+  }
+
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    background: var(--color-bg);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* Page scrolls, but never rubber-bands the whole app while scrolling a list. */
+    overscroll-behavior-y: none;
+  }
+
   /**
-   * The home-indicator inset is ~34px on a notched iPhone. Reserving all of it
-   * under the tab bar left a visibly dead strip and pushed the bar up away
-   * from the thumb, so only the part that actually overlaps is kept.
+   * iOS zooms any input under 16px on focus, which breaks the layout mid-set.
+   * This is a floor, not a lock: a larger `text-*` utility still wins, so no
+   * input may be given a size below 16px.
    */
-  --nav-safe-bottom: max(4px, calc(env(safe-area-inset-bottom, 0px) - 14px));
-  --nav-height: 58px;
-  color-scheme: dark;
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+
+  input[type='number'] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
 }
 
-* {
-  -webkit-tap-highlight-color: transparent;
-}
+/**
+ * Named classes sit in `@layer components` so a utility passed alongside one
+ * always wins — `class="eyebrow active:text-ink"` has to be able to recolour
+ * the label. Unlayered, these outranked every utility in the app.
+ */
+@layer components {
+  /* Numbers are the content: tabular figures stop weights from jittering. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
 
-html {
-  background: var(--color-bg);
-  -webkit-text-size-adjust: 100%;
-}
-
-body {
-  margin: 0;
-  background: var(--color-bg);
-  color: var(--color-ink);
-  font-family: var(--font-sans);
-  font-size: 15px;
-  line-height: 1.45;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-  /* Page scrolls, but never rubber-bands the whole app while scrolling a list. */
-  overscroll-behavior-y: none;
-}
-
-/* Numbers are the content: tabular figures stop weights from jittering. */
-.tnum {
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: 'tnum' 1;
-}
-
-/* Section labels — small, wide, dim. Used everywhere instead of headings. */
-.eyebrow {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--color-dim);
-}
-
-input,
-textarea,
-select,
-button {
-  font: inherit;
-  color: inherit;
-}
-
-/* iOS zooms any input under 16px on focus, which breaks the layout mid-set. */
-input,
-textarea,
-select {
-  font-size: 16px;
-}
-
-input[type='number'] {
-  -moz-appearance: textfield;
-  appearance: textfield;
-}
-input[type='number']::-webkit-outer-spin-button,
-input[type='number']::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-::-webkit-scrollbar {
-  width: 0;
-  height: 0;
+  /* Section labels — small, wide, dim. Used everywhere instead of headings. */
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-dim);
+  }
 }
 
 @keyframes gym-fade-up {
@@ -172,30 +190,39 @@ input[type='number']::-webkit-inner-spin-button {
   }
 }
 
-.anim-fade-up {
-  animation: gym-fade-up 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-.anim-sheet {
-  animation: gym-sheet-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-.anim-pop {
-  animation: gym-pop 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-.anim-ring {
-  animation: gym-pulse-ring 0.7s ease-out;
+@layer components {
+  .anim-fade-up {
+    animation: gym-fade-up 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .anim-sheet {
+    animation: gym-sheet-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .anim-pop {
+    animation: gym-pop 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .anim-ring {
+    animation: gym-pulse-ring 0.7s ease-out;
+  }
+
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--color-surface) 25%,
+      var(--color-surface3) 50%,
+      var(--color-surface) 75%
+    );
+    background-size: 200% 100%;
+    animation: gym-shimmer 1.4s linear infinite;
+  }
+
+  /* Anything the thumb hits during a workout is at least this big. */
+  .touch {
+    min-height: 48px;
+    min-width: 48px;
+  }
 }
 
-.skeleton {
-  background: linear-gradient(
-    90deg,
-    var(--color-surface) 25%,
-    var(--color-surface3) 50%,
-    var(--color-surface) 75%
-  );
-  background-size: 200% 100%;
-  animation: gym-shimmer 1.4s linear infinite;
-}
-
+/* Unlayered on purpose: an accessibility override must outrank everything. */
 @media (prefers-reduced-motion: reduce) {
   .anim-fade-up,
   .anim-sheet,
@@ -204,10 +231,4 @@ input[type='number']::-webkit-inner-spin-button {
   .skeleton {
     animation: none !important;
   }
-}
-
-/* Anything the thumb hits during a workout is at least this big. */
-.touch {
-  min-height: 48px;
-  min-width: 48px;
 }

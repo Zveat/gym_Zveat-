@@ -7,7 +7,7 @@
  *
  * Set SMOKE_BASE_URL to test against an already-running server.
  */
-import { openApp, reporter, startServer, textHelpers } from './harness.mjs';
+import { assertReadableText, openApp, reporter, startServer, textHelpers } from './harness.mjs';
 
 const PORT = Number(process.env.SMOKE_PORT ?? 4319);
 
@@ -88,6 +88,12 @@ async function main() {
   check('records the actual weight, not the plan', has(body, '52.5 × 12'));
   check('moves on to set 2 of 4', has(body, 'Подход 2 из 4'));
 
+  // The screen the user actually stares at between sets, with real numbers on
+  // it. Checked here rather than on an empty screen because the set history,
+  // the plan line and the logged weight only exist once a set is done.
+  const setUnreadable = await assertReadableText(page);
+  check('every number on the exercise screen is readable', setUnreadable === null, setUnreadable ?? '');
+
   console.log('\nFINISH THE EXERCISE');
   for (let i = 0; i < 3; i += 1) {
     await page.click('button:has-text("СОХРАНИТЬ ПОДХОД")');
@@ -127,6 +133,8 @@ async function main() {
     /МОЖНО ПРИБАВИТЬ|ДЕРЖИМ ВЕС|ЛУЧШЕ СНИЗИТЬ/.test(body),
   );
   check('offers accept / edit / ignore', has(body, 'ПРИНЯТЬ', 'ИЗМЕНИТЬ', 'ОСТАВИТЬ'));
+  const reviewUnreadable = await assertReadableText(page);
+  check('the review screen is readable', reviewUnreadable === null, reviewUnreadable ?? '');
 
   console.log('\nHISTORY');
   await page.goto(`${base}/history`, { waitUntil: 'networkidle' });

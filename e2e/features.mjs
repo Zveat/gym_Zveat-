@@ -6,6 +6,7 @@
  */
 import {
   assertNoHorizontalOverflow,
+  assertReadableText,
   buildXlsx,
   openApp,
   reporter,
@@ -355,6 +356,52 @@ async function main() {
     const overflow = await assertNoHorizontalOverflow(page);
     check(`${url} fits the screen`, overflow === null, overflow ?? '');
   }
+
+  console.log('\nEVERY SCREEN IS READABLE');
+  // A stray unlayered rule in globals.css once beat every Tailwind text-colour
+  // utility, so the lime button had white text and no chip showed its selected
+  // state. Nothing in the markup shows that — only computed styles do.
+  for (const url of screens) {
+    await page.goto(`${base}${url}`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(250);
+    const unreadable = await assertReadableText(page);
+    check(`${url} has readable text`, unreadable === null, unreadable ?? '');
+  }
+
+  console.log('\nTHE PRIMARY BUTTON CARRIES ITS OWN COLOUR');
+  await page.goto(`${base}/more/body-weight`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('button:has-text("ДОБАВИТЬ")');
+  const primary = await page.evaluate(() => {
+    const el = [...document.querySelectorAll('button')].find((b) =>
+      /ДОБАВИТЬ/i.test(b.innerText),
+    );
+    if (!el) return null;
+    const style = getComputedStyle(el);
+    return { color: style.color, background: style.backgroundColor, weight: style.fontWeight };
+  });
+  check('the primary button is lime', primary?.background === 'rgb(182, 255, 59)', primary?.background ?? 'missing');
+  check(
+    'its label is ink, not white',
+    primary?.color === 'rgb(11, 11, 13)',
+    `got ${primary?.color ?? 'nothing'}`,
+  );
+  check('its label keeps its weight', primary?.weight === '600', primary?.weight ?? '');
+
+  // Selected state is carried by colour as well as background; when the text
+  // colour silently stopped applying, every option in a row looked identical.
+  const goalColours = await page.evaluate(() =>
+    ['Набор', 'Поддержание'].map((label) => {
+      const el = [...document.querySelectorAll('button')].find(
+        (b) => b.innerText.trim() === label,
+      );
+      return el ? getComputedStyle(el).color : null;
+    }),
+  );
+  check(
+    'the selected goal reads differently from the others',
+    goalColours[0] !== null && goalColours[0] !== goalColours[1],
+    goalColours.join(' vs '),
+  );
 
   await page.goto(`${base}/history/add`, { waitUntil: 'networkidle' });
   await page.waitForSelector('button:has-text("ЗАПОЛНИТЬ ПОДХОДЫ")');

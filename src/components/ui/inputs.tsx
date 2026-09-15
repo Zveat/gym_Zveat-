@@ -34,8 +34,12 @@ const INPUT_SHELL =
 
 const INPUT_DENSITY = {
   default: 'min-h-12 px-3.5 py-3',
-  /** Dense forms: the program editor's set table, inline numbers. */
-  compact: 'min-h-10 px-2.5 py-1.5 text-[14px]',
+  /**
+   * Dense forms: the program editor's set table, inline numbers. No font size
+   * here on purpose — anything under 16px makes iOS zoom the page on focus,
+   * and the base layer's 16px floor is now overridable by a utility.
+   */
+  compact: 'min-h-10 px-2.5 py-1.5',
   /** No chrome at all — an editable heading. */
   bare: 'border-0 bg-transparent px-0 py-1',
 } as const;

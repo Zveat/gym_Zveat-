@@ -99,6 +99,97 @@ export async function assertNoHorizontalOverflow(page) {
   });
 }
 
+/**
+ * Every piece of text on screen must be readable against what is actually
+ * behind it. This exists because a single unlayered `button { color: inherit }`
+ * in globals.css outranked every Tailwind text-colour utility (unlayered CSS
+ * beats every cascade layer regardless of specificity), so the lime primary
+ * button rendered near-white text and selected/unselected chips were the same
+ * colour app-wide. Computed styles are the only way to catch that class of bug.
+ *
+ * Colours are resolved by painting them on a canvas, because Tailwind emits
+ * `oklab()` for opacity modifiers and parsing that by hand gets it wrong.
+ * Returns null when everything passes, or a description of the worst offenders.
+ */
+export async function assertReadableText(page, { min = 4.5, minLarge = 3 } = {}) {
+  const offenders = await page.evaluate(
+    ({ min, minLarge }) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1;
+      canvas.height = 1;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      /** Paint the layers bottom-up and read back the composited sRGB pixel. */
+      const paint = (layers) => {
+        ctx.clearRect(0, 0, 1, 1);
+        for (const colour of layers) {
+          ctx.fillStyle = colour;
+          ctx.fillRect(0, 0, 1, 1);
+        }
+        const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+        return { r, g, b };
+      };
+      const luminance = ({ r, g, b }) => {
+        const channel = (v) => {
+          const c = v / 255;
+          return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+        };
+        return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+      };
+      const contrast = (a, b) => {
+        const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+        return (light + 0.05) / (dark + 0.05);
+      };
+      /** The page background plus every painted ancestor background, in order. */
+      const backdrop = (el) => {
+        const chain = [];
+        for (let cur = el; cur; cur = cur.parentElement) chain.push(cur);
+        const layers = ['#0b0b0d'];
+        for (const node of chain.reverse()) {
+          const colour = getComputedStyle(node).backgroundColor;
+          if (colour && colour !== 'transparent' && colour !== 'rgba(0, 0, 0, 0)') {
+            layers.push(colour);
+          }
+        }
+        return layers;
+      };
+
+      const found = [];
+      const seen = new Set();
+      for (const el of document.querySelectorAll('*')) {
+        const own = [...el.childNodes]
+          .filter((node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim())
+          .map((node) => node.textContent.trim())
+          .join(' ');
+        if (!own) continue;
+        const box = el.getBoundingClientRect();
+        if (box.width < 4 || box.height < 4) continue;
+        const style = getComputedStyle(el);
+        if (style.visibility === 'hidden' || Number(style.opacity) === 0) continue;
+
+        const layers = backdrop(el);
+        const behind = paint(layers);
+        const text = paint([...layers, style.color]);
+        const ratio = contrast(text, behind);
+        const size = parseFloat(style.fontSize);
+        const large = size >= 24 || (size >= 18.66 && Number(style.fontWeight) >= 700);
+        const need = large ? minLarge : min;
+        if (ratio >= need) continue;
+
+        const key = `${own.slice(0, 30)}|${style.color}|${style.fontSize}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        found.push(
+          `"${own.slice(0, 26)}" ${style.fontSize} ${style.color} on rgb(${behind.r},${behind.g},${behind.b}) = ${ratio.toFixed(2)}:1 (needs ${need})`,
+        );
+      }
+      return found;
+    },
+    { min, minLarge },
+  );
+  if (!offenders.length) return null;
+  return `${offenders.length} unreadable: ${offenders.slice(0, 4).join(' | ')}`;
+}
+
 /* ── .xlsx fixture builder ─────────────────────────────────────────── */
 
 function crc32(buffer) {

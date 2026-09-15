@@ -124,7 +124,9 @@ export default function PainPage() {
                 aria-label={`${n} из 10`}
                 className={cx(
                   'tnum h-10 flex-1 rounded-lg border text-[12px] transition-colors',
-                  n <= severity ? 'border-transparent text-bg' : 'border-line bg-surface2 text-faint',
+                  // The unpicked numbers are still tap targets, so they stay
+                  // legible: `faint` on `surface2` measures only 4.3:1.
+                  n <= severity ? 'border-transparent text-bg' : 'border-line bg-surface2 text-dim',
                 )}
                 style={n <= severity ? { background: severityColor(severity) } : undefined}
               >
