@@ -2,6 +2,7 @@
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
+import { deflateRawSync } from 'node:zlib';
 import { chromium } from 'playwright';
 
 const ROOT = new URL('../out/', import.meta.url).pathname;
@@ -90,6 +91,112 @@ export async function assertNoHorizontalOverflow(page) {
     }
     return `${doc.scrollWidth}px wide on a ${doc.clientWidth}px screen: ${offenders.slice(0, 3).join(', ')}`;
   });
+}
+
+/* ── .xlsx fixture builder ─────────────────────────────────────────── */
+
+function crc32(buffer) {
+  if (!crc32.table) {
+    crc32.table = [];
+    for (let i = 0; i < 256; i += 1) {
+      let c = i;
+      for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      crc32.table[i] = c >>> 0;
+    }
+  }
+  let crc = 0xffffffff;
+  for (const byte of buffer) crc = crc32.table[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function zip(entries) {
+  const locals = [];
+  const centrals = [];
+  let offset = 0;
+
+  for (const entry of entries) {
+    const name = Buffer.from(entry.name, 'utf8');
+    const payload = deflateRawSync(entry.data);
+    const crc = crc32(entry.data);
+
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(8, 8);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(payload.length, 18);
+    local.writeUInt32LE(entry.data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    locals.push(local, name, payload);
+
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(8, 10);
+    central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(payload.length, 20);
+    central.writeUInt32LE(entry.data.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE(offset, 42);
+    centrals.push(central, name);
+
+    offset += local.length + name.length + payload.length;
+  }
+
+  const central = Buffer.concat(centrals);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(entries.length, 8);
+  eocd.writeUInt16LE(entries.length, 10);
+  eocd.writeUInt32LE(central.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+
+  return Buffer.concat([...locals, central, eocd]);
+}
+
+const escapeXml = (text) =>
+  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/**
+ * Builds a genuine .xlsx from a grid of strings — ZIP container, deflate
+ * compression, shared strings, the lot. Cells that look numeric are written as
+ * numbers so the app has to handle both kinds, including Excel date serials.
+ */
+export function buildXlsx(rows) {
+  const strings = [];
+  const indexOf = (value) => {
+    const existing = strings.indexOf(value);
+    if (existing >= 0) return existing;
+    strings.push(value);
+    return strings.length - 1;
+  };
+
+  const sheetRows = rows
+    .map((row, r) => {
+      const cells = row
+        .map((value, c) => {
+          const ref = `${String.fromCharCode(65 + c)}${r + 1}`;
+          if (value === '' || value === null || value === undefined) return '';
+          if (/^-?\d+([.]\d+)?$/.test(String(value))) {
+            return `<c r="${ref}"><v>${value}</v></c>`;
+          }
+          return `<c r="${ref}" t="s"><v>${indexOf(String(value))}</v></c>`;
+        })
+        .join('');
+      return `<row r="${r + 1}">${cells}</row>`;
+    })
+    .join('');
+
+  const sheet = `<?xml version="1.0" encoding="UTF-8"?><worksheet><sheetData>${sheetRows}</sheetData></worksheet>`;
+  const shared = `<?xml version="1.0" encoding="UTF-8"?><sst count="${strings.length}" uniqueCount="${strings.length}">${strings
+    .map((value) => `<si><t>${escapeXml(value)}</t></si>`)
+    .join('')}</sst>`;
+
+  return zip([
+    { name: 'xl/worksheets/sheet1.xml', data: Buffer.from(sheet, 'utf8') },
+    { name: 'xl/sharedStrings.xml', data: Buffer.from(shared, 'utf8') },
+  ]);
 }
 
 export function reporter() {

@@ -1,4 +1,5 @@
 import type { Exercise } from '@/domain/types';
+import { excelSerialToIso } from './xlsx';
 
 /**
  * Bulk import: turns the user's existing plain-text notes (or a CSV) into
@@ -126,9 +127,18 @@ function assemble(y: number, m: number, d: number): string | null {
  * A date with no year is assumed to be the most recent such date not in the
  * future, which is what "SEP 14" means in a notes file.
  */
-export function parseDateLine(line: string, today: Date = new Date()): string | null {
+export function parseDateLine(
+  line: string,
+  today: Date = new Date(),
+  options: { allowExcelSerial?: boolean } = {},
+): string | null {
   const text = line.trim();
   if (!text) return null;
+
+  if (options.allowExcelSerial && /^\d{2,6}([.,]\d+)?$/.test(text)) {
+    const iso = excelSerialToIso(parseFloat(text.replace(',', '.')));
+    if (iso) return iso;
+  }
 
   let m = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if (m) return assemble(+m[1], +m[2], +m[3]);
@@ -463,7 +473,7 @@ export function parseWorkoutCsv(
 
   lines.slice(1).forEach((line, i) => {
     const cells = splitCsvLine(line, delimiter);
-    const date = parseDateLine(cells[idx.date] ?? '', today);
+    const date = parseDateLine(cells[idx.date] ?? '', today, { allowExcelSerial: true });
     if (!date) {
       warnings.push(`Строка ${i + 2}: не разобрана дата «${cells[idx.date] ?? ''}».`);
       return;

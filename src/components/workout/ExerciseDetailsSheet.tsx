@@ -275,20 +275,35 @@ function NotesTab({ exerciseId }: { exerciseId: ID | null }) {
 
 function HistoryTab({ exerciseId }: { exerciseId: ID | null }) {
   const sessions = useStore((s) => s.sessions);
+  const programs = useStore((s) => s.programs);
   const activeProgramId = useStore((s) => s.settings.activeProgramId);
   const [range, setRange] = useState<HistoryRange>('3m');
-  const [programOnly, setProgramOnly] = useState(false);
+  /** `''` = every program, otherwise a specific one. */
+  const [programFilter, setProgramFilter] = useState<string>('');
 
   const entries = useMemo(
     () =>
       exerciseId
         ? exerciseHistory(sessions, exerciseId, {
             range,
-            programId: programOnly ? activeProgramId : null,
+            programId: programFilter || null,
           })
         : [],
-    [sessions, exerciseId, range, programOnly, activeProgramId],
+    [sessions, exerciseId, range, programFilter],
   );
+
+  // Only offer programs this exercise was actually trained under.
+  const trainedUnder = useMemo(() => {
+    if (!exerciseId) return [];
+    const ids = new Set<string>();
+    for (const session of sessions) {
+      if (session.status !== 'completed' || !session.programId) continue;
+      if (session.exercises.some((e) => e.exerciseId === exerciseId && e.sets.some((s) => s.actual))) {
+        ids.add(session.programId);
+      }
+    }
+    return programs.filter((p) => ids.has(p.id));
+  }, [sessions, programs, exerciseId]);
 
   return (
     <div>
@@ -298,10 +313,24 @@ function HistoryTab({ exerciseId }: { exerciseId: ID | null }) {
             {HISTORY_RANGE_LABEL[key]}
           </Chip>
         ))}
-        <Chip selected={programOnly} onClick={() => setProgramOnly((v) => !v)}>
-          Текущая программа
-        </Chip>
       </div>
+
+      {trainedUnder.length > 1 || (trainedUnder.length === 1 && trainedUnder[0].id !== activeProgramId) ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <Chip selected={programFilter === ''} onClick={() => setProgramFilter('')}>
+            Все программы
+          </Chip>
+          {trainedUnder.map((program) => (
+            <Chip
+              key={program.id}
+              selected={programFilter === program.id}
+              onClick={() => setProgramFilter(program.id)}
+            >
+              {program.id === activeProgramId ? 'Текущая программа' : program.name}
+            </Chip>
+          ))}
+        </div>
+      ) : null}
 
       {entries.length ? (
         <ul className="mt-4 flex flex-col gap-2.5">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Screen, ScreenHeader } from '@/components/layout/Screen';
 import { Field, Select, TextArea, TextInput } from '@/components/ui/inputs';
 import {
@@ -20,6 +20,7 @@ import {
   parseWorkoutText,
   type ParsedWorkout,
 } from '@/engine/import-parser';
+import { readXlsx, rowsToCsv, XlsxError } from '@/engine/xlsx';
 import { useStore } from '@/store/useStore';
 
 const EXAMPLE = `01.08.2026
@@ -53,10 +54,44 @@ export default function ImportPage() {
 
   const [source, setSource] = useState<'text' | 'csv'>('text');
   const [raw, setRaw] = useState('');
+  const fileInput = useRef<HTMLInputElement | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [loadedFile, setLoadedFile] = useState<string | null>(null);
   const [preview, setPreview] = useState<ParsedWorkout[] | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [programId, setProgramId] = useState<string>(activeProgramId ?? '');
   const [result, setResult] = useState<{ created: number; skipped: number } | null>(null);
+
+  /**
+   * A file is just another way to get the same text: .xlsx is unpacked to CSV
+   * in the browser, everything else is read as plain text. The preview step
+   * afterwards is identical, so there is one place to check the result.
+   */
+  const loadFile = async (file: File) => {
+    setFileError(null);
+    setLoadedFile(null);
+    try {
+      const isExcel = /\.xlsx$/i.test(file.name);
+      if (isExcel) {
+        const rows = await readXlsx(await file.arrayBuffer());
+        if (!rows.length) throw new XlsxError('В файле нет строк.');
+        setRaw(rowsToCsv(rows));
+        setSource('csv');
+      } else {
+        const text = await file.text();
+        setRaw(text);
+        // A header line with a Date column means it is tabular, not notes.
+        setSource(/(^|[,;])\s*(date|дата)\s*([,;]|$)/im.test(text.split(/\r?\n/)[0] ?? '') ? 'csv' : 'text');
+      }
+      setLoadedFile(file.name);
+      setPreview(null);
+      setResult(null);
+    } catch (e) {
+      setFileError(
+        e instanceof XlsxError ? e.message : 'Не удалось прочитать файл. Попробуйте CSV.',
+      );
+    }
+  };
 
   const parse = () => {
     const parsed =
@@ -160,12 +195,45 @@ export default function ImportPage() {
             onChange={(next) => {
               setSource(next);
               setRaw('');
+              setLoadedFile(null);
             }}
             options={[
               { value: 'text', label: 'Текст' },
               { value: 'csv', label: 'CSV' },
             ]}
           />
+
+          <Card className="mt-3 p-4">
+            <Eyebrow>Файл</Eyebrow>
+            <Button size="md" full className="mt-2" onClick={() => fileInput.current?.click()}>
+              ВЫБРАТЬ ФАЙЛ (CSV, XLSX, TXT)
+            </Button>
+            <input
+              ref={fileInput}
+              type="file"
+              accept=".csv,.tsv,.txt,.xlsx,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void loadFile(file);
+                e.target.value = '';
+              }}
+            />
+            {loadedFile ? (
+              <p className="mt-2 text-[12px] text-dim">
+                Загружен: <span className="text-ink">{loadedFile}</span>
+              </p>
+            ) : (
+              <p className="mt-2 text-[11.5px] leading-relaxed text-dim">
+                Excel распаковывается прямо в приложении — ничего никуда не отправляется.
+              </p>
+            )}
+            {fileError ? (
+              <div className="mt-2">
+                <Notice tone="warn">{fileError}</Notice>
+              </div>
+            ) : null}
+          </Card>
 
           <Card className="mt-3 p-4">
             <Eyebrow>{source === 'text' ? 'Ваши заметки' : 'CSV'}</Eyebrow>
@@ -212,7 +280,11 @@ export default function ImportPage() {
                 Отдельной строкой: <span className="text-ink">последний 60кг</span> — вес с теми же
                 повторениями
               </li>
-              <li>CSV: Date, Program, Workout, Exercise, Set, Weight, Reps</li>
+              <li>CSV и Excel: Date, Program, Workout, Exercise, Set, Weight, Reps</li>
+              <li>
+                Даты, которые Excel хранит числом (<span className="text-ink">46235</span>), тоже
+                разбираются
+              </li>
             </ul>
           </Card>
         </>

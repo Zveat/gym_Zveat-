@@ -205,6 +205,19 @@ describe('csv import', () => {
     expect(warnings[0]).toContain('дата');
   });
 
+  it('reads dates Excel wrote as day counts', () => {
+    const csv = ['Date,Exercise,Weight,Reps', '46235,Жим штанги лежа,50,12'].join('\n');
+    const { workouts, warnings } = parseWorkoutCsv(csv, exercises, TODAY);
+    expect(warnings).toHaveLength(0);
+    expect(workouts[0].date).toBe('2026-08-01');
+  });
+
+  it('does not read bare numbers in free text as excel dates', () => {
+    // A stray "46235" in pasted notes is not a date.
+    expect(parseDateLine('46235', TODAY)).toBeNull();
+    expect(parseDateLine('46235', TODAY, { allowExcelSerial: true })).toBe('2026-08-01');
+  });
+
   it('explains what columns it needs', () => {
     const { warnings } = parseWorkoutCsv('Foo,Bar\n1,2', exercises, TODAY);
     expect(warnings[0]).toContain('Date');

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Screen, ScreenHeader } from '@/components/layout/Screen';
 import { Sheet } from '@/components/ui/Sheet';
 import { Field, Select, TextArea, TextInput } from '@/components/ui/inputs';
@@ -19,6 +19,7 @@ import {
 import type { Equipment, Exercise, MuscleGroup } from '@/domain/types';
 import { exerciseFrequency } from '@/engine/history';
 import { formatWeight, MUSCLE_LABEL } from '@/engine/format';
+import { formatBytes, PhotoError, preparePhoto } from '@/engine/image';
 import { normalizeName } from '@/engine/import-parser';
 import { useHistory } from '@/store/selectors';
 import { useStore } from '@/store/useStore';
@@ -150,6 +151,111 @@ export default function ExerciseLibraryPage() {
         exercise={editing}
       />
     </Screen>
+  );
+}
+
+/**
+ * A photo of the actual machine in the actual gym: the fastest way to remember
+ * which of three lat pulldowns this exercise means. Taken with the camera or
+ * picked from the library; a URL still works for a GIF of the movement.
+ */
+function PhotoField({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const storage = useStore((s) => s.storage);
+  const fileInput = useRef<HTMLInputElement | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+
+  const isLocalPhoto = value.startsWith('data:');
+
+  const pick = async (file: File) => {
+    setBusy(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const photo = await preparePhoto(file);
+      onChange(photo.dataUrl);
+      setInfo(`${photo.width}×${photo.height}, ${formatBytes(photo.bytes)}`);
+    } catch (e) {
+      setError(e instanceof PhotoError ? e.message : 'Не удалось обработать фото.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div>
+      <Eyebrow>Фото тренажёра</Eyebrow>
+
+      {value ? (
+        // Any source the user pastes must load, so a plain img is right here.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={value}
+          alt="Фото упражнения"
+          className="mt-2 max-h-56 w-full rounded-[var(--radius-tile)] border border-line object-cover"
+        />
+      ) : null}
+
+      <div className="mt-2 flex gap-2">
+        <Button size="md" className="flex-1" disabled={busy} onClick={() => fileInput.current?.click()}>
+          {busy ? 'ОБРАБОТКА…' : value ? 'ЗАМЕНИТЬ' : 'ВЫБРАТЬ ФОТО'}
+        </Button>
+        {value ? (
+          <Button size="md" variant="ghost" onClick={() => { onChange(''); setInfo(null); }}>
+            УБРАТЬ
+          </Button>
+        ) : null}
+      </div>
+
+      <input
+        ref={fileInput}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void pick(file);
+          e.target.value = '';
+        }}
+      />
+
+      <Field label="Или ссылка" className="mt-3">
+        <TextInput
+          value={isLocalPhoto ? '' : value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="https://… (GIF или изображение)"
+          inputMode="url"
+          disabled={isLocalPhoto}
+        />
+      </Field>
+
+      {info ? <p className="mt-1.5 text-[11.5px] text-dim">Сохранено: {info}</p> : null}
+      {isLocalPhoto && !info ? (
+        <p className="mt-1.5 text-[11.5px] text-dim">
+          Фото хранится в приложении. Чтобы вставить ссылку, сначала уберите его.
+        </p>
+      ) : null}
+      {error ? (
+        <div className="mt-2">
+          <Notice tone="warn">{error}</Notice>
+        </div>
+      ) : null}
+      {isLocalPhoto && storage !== 'indexeddb' ? (
+        <div className="mt-2">
+          <Notice tone="warn">
+            Браузер не дал приложению постоянное хранилище — фото может не сохраниться после
+            закрытия. Проверьте раздел «Настройки → Данные».
+          </Notice>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -315,14 +421,7 @@ function ExerciseForm({
           />
         </Field>
 
-        <Field label="Фото или GIF" hint="Ссылка на изображение тренажёра или движения">
-          <TextInput
-            value={mediaUrl}
-            onChange={(e) => setMediaUrl(e.target.value)}
-            placeholder="https://…"
-            inputMode="url"
-          />
-        </Field>
+        <PhotoField value={mediaUrl} onChange={setMediaUrl} />
 
         {error ? <Notice tone="warn">{error}</Notice> : null}
 

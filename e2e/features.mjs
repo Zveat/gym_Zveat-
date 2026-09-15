@@ -6,6 +6,7 @@
  */
 import {
   assertNoHorizontalOverflow,
+  buildXlsx,
   openApp,
   reporter,
   startServer,
@@ -13,6 +14,13 @@ import {
 } from './harness.mjs';
 
 const PORT = Number(process.env.SMOKE_PORT ?? 4320);
+
+/** A real .xlsx (ZIP + deflate), built here so the test needs no fixture file. */
+const XLSX_FIXTURE = buildXlsx([
+  ['Date', 'Exercise', 'Weight', 'Reps'],
+  ['46235', 'Жим штанги лежа', '50', '12'],
+  ['46235', 'Жим штанги лежа', '50', '12'],
+]);
 
 async function main() {
   const external = process.env.SMOKE_BASE_URL;
@@ -210,6 +218,89 @@ async function main() {
   await page.click('button:has-text("Сохранить резервную копию")');
   const file = await download;
   check('exports a backup file', file !== null && /gym-os-backup-.*\.json/.test(file?.suggestedFilename() ?? ''));
+
+  console.log('\nMUSCLE GROUP HEADING IS EDITABLE');
+  await page.goto(`${base}/programs`, { waitUntil: 'networkidle' });
+  await page.click('a:has-text("Редактировать")');
+  await page.waitForURL(/\/programs\/editor/);
+  await page.waitForTimeout(400);
+  await page.click('button:has-text("Настроить") >> nth=0');
+  await page.waitForSelector('text=Группа мышц');
+  await page.fill('input[placeholder="Например: ГРУДЬ"]', 'ЖИМЫ');
+  await page.click('button:has-text("ГОТОВО")');
+  await page.waitForTimeout(500);
+  body = await text();
+  check('the section heading can be renamed', has(body, 'ЖИМЫ'));
+
+  console.log('\nPHOTO OF THE USER\'S OWN MACHINE');
+  await page.goto(`${base}/more/exercises`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('input[placeholder="Поиск"]');
+  await page.click('header button');
+  await page.waitForSelector('text=Фото тренажёра');
+  body = await text();
+  check('the exercise form offers a photo picker', has(body, 'Выбрать фото', 'Или ссылка'));
+
+  // A 2000x1200 PNG stands in for a phone photo: it must be downscaled to
+  // 1280 on the long edge and stored as a JPEG data URL.
+  await page.setInputFiles('input[type="file"][accept="image/*"]', {
+    name: 'machine.png',
+    mimeType: 'image/png',
+    buffer: await page.evaluate(async () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 2000;
+      canvas.height = 1200;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#b6ff3b';
+      ctx.fillRect(0, 0, 2000, 1200);
+      ctx.fillStyle = '#0b0b0d';
+      ctx.fillRect(100, 100, 600, 400);
+      const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
+      return Array.from(new Uint8Array(await blob.arrayBuffer()));
+    }).then((bytes) => Buffer.from(bytes)),
+  });
+  await page.waitForSelector('text=Сохранено:', { timeout: 15_000 });
+  body = await text();
+  check('downscales the photo to the long-edge cap', has(body, '1280×768'));
+  check('reports the stored size', /СОХРАНЕНО: 1280×768, \d+ КБ/.test(body));
+
+  await page.fill('input[placeholder="Тяга верхнего блока — тренажёр №2"]', 'Тяга блока — тренажёр №3');
+  await page.click('button:has-text("СОЗДАТЬ")');
+  await page.waitForTimeout(600);
+  const storedPhoto = await page.evaluate(() => {
+    const img = [...document.querySelectorAll('img')].find((i) => i.src.startsWith('data:image/jpeg'));
+    return img ? img.src.length : 0;
+  });
+  await page.goto(`${base}/more/exercises`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(500);
+  await page.click('button:has-text("Тяга блока — тренажёр №3")');
+  await page.waitForSelector('text=Фото тренажёра');
+  const persisted = await page.evaluate(
+    () => !![...document.querySelectorAll('img')].find((i) => i.src.startsWith('data:image/jpeg')),
+  );
+  check('the photo survives a reload as a jpeg', persisted, `stored length ${storedPhoto}`);
+
+  console.log('\nEXCEL IMPORT');
+  await page.goto(`${base}/more/import`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('button:has-text("ВЫБРАТЬ ФАЙЛ")');
+  await page.setInputFiles('input[type="file"]', {
+    name: 'history.xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: XLSX_FIXTURE,
+  });
+  await page.waitForSelector('text=Загружен:');
+  body = await text();
+  check('loads an xlsx file', has(body, 'history.xlsx'));
+  await page.click('button:has-text("РАЗОБРАТЬ")');
+  await page.waitForSelector('text=Предпросмотр');
+  body = await text();
+  check('reads the excel rows', has(body, 'Жим штанги лежа', '50×12'));
+  // The parsed date lands in a date input, whose value is not page text.
+  const parsedDate = await page.locator('input[type="date"]').first().inputValue();
+  check('converts the excel date serial 46235 to 2026-08-01', parsedDate === '2026-08-01', parsedDate);
+  await page.click('button:text-is("ИМПОРТИРОВАТЬ")');
+  await page.waitForSelector('text=Импорт завершён');
+  body = await text();
+  check('imports from excel', has(body, 'Добавлено тренировок: 1'));
 
   console.log('\nNO HORIZONTAL OVERFLOW ON ANY SCREEN');
   // Includes the manual-entry form in its filled state, where a full-width

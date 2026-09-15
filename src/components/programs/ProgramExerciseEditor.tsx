@@ -101,6 +101,20 @@ export function ProgramExerciseEditor({
     >
       <div className="flex flex-col gap-6 pb-4">
         <section>
+          <SectionTitle>Группа мышц</SectionTitle>
+          <TextInput
+            value={pe.section}
+            onChange={(e) => patch({ section: e.target.value })}
+            placeholder="Например: ГРУДЬ"
+            className="mt-2"
+          />
+          <p className="mt-1.5 px-1 text-[12px] leading-relaxed text-dim">
+            Заголовок, под которым упражнение стоит в дне. Упражнения с одинаковым заголовком
+            группируются вместе.
+          </p>
+        </section>
+
+        <section>
           <SectionTitle
             action={
               <button
