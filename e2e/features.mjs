@@ -303,6 +303,33 @@ async function main() {
   body = await text();
   check('imports from excel', has(body, 'Добавлено тренировок: 1'));
 
+  console.log('\nA DATABASE WITH NO PROGRAM REPAIRS ITSELF');
+  // A half-finished seed once left an account with exercises but no program,
+  // and the app parked on "no active program" with no way back. Deleting the
+  // program reproduces that state exactly.
+  await page.goto(`${base}/programs`, { waitUntil: 'networkidle' });
+  await page.click('button:has-text("Ещё")');
+  await page.waitForSelector('text=Удалить программу');
+  await page.click('button:has-text("Удалить программу")');
+  await page.waitForSelector('text=Удалить программу?');
+  await page.click('div[role="dialog"] button:has-text("Удалить")');
+  await page.waitForTimeout(600);
+  body = await text();
+  check('the program can be deleted', !has(body, 'СПЛИТ — НАБОР МАССЫ'));
+
+  await page.goto(`${base}/`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('text=НАЧАТЬ ТРЕНИРОВКУ', { timeout: 15_000 });
+  body = await text();
+  check('a reload restores a usable program', has(body, 'СПЛИТ — НАБОР МАССЫ'));
+  check('never parks on "no active program"', !has(body, 'Нет активной программы'));
+
+  await page.goto(`${base}/programs`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(400);
+  await page.click('a:has-text("Редактировать")');
+  await page.waitForTimeout(600);
+  body = await text();
+  check('the restored program keeps day 1 intact', has(body, '50 кг × 12 × 4', 'Position: 2'));
+
   console.log('\nNO HORIZONTAL OVERFLOW ON ANY SCREEN');
   // Includes the manual-entry form in its filled state, where a full-width
   // class on a shrink-0 field once pushed the row past the screen.

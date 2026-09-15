@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 import { newId, nowStamp, todayString } from '@/domain/ids';
 import { DEFAULT_MODES } from '@/domain/modes';
-import { buildSeedSnapshot, defaultSettings } from '@/domain/seed';
+import { buildSeedSnapshot, defaultSettings, SEED_VERSION } from '@/domain/seed';
 import type {
   BodyWeightLog,
   ConditionCheckIn,
@@ -853,32 +853,54 @@ async function loadFrom(
   const loaded = await adapter.loadAll();
   const kv = loaded.kv ?? {};
 
-  const isEmpty =
-    !(loaded.programs?.length ?? 0) && !(loaded.exercises?.length ?? 0) && !kv[KV_SETTINGS];
+  let exercises = loaded.exercises ?? [];
+  let programs = loaded.programs ?? [];
+  let storedSettings = kv[KV_SETTINGS] as Settings | undefined;
 
-  if (isEmpty) {
-    const snapshot = buildSeedSnapshot(nowStamp());
-    set({ ...snapshot, status: 'ready', storage: adapter.kind, rest: null });
+  /**
+   * A database with no program is a dead end: the user lands on "no active
+   * program" and nothing they do on that screen brings one back.
+   *
+   * Two situations produce it — a first launch, and a half-finished earlier
+   * seed (exercises written, program not). Both are repaired the same way, so
+   * the condition is "no program", not "nothing at all": that earlier version
+   * checked for a completely empty database and therefore skipped exactly the
+   * accounts that needed fixing.
+   *
+   * Missing library exercises are added, existing ones left alone, and the
+   * user's own settings kept — only the active program is forced to the one
+   * just written.
+   */
+  if (!programs.length) {
+    const seed = buildSeedSnapshot(nowStamp());
+    const known = new Set(exercises.map((e) => e.id));
+    const missing = seed.exercises.filter((e) => !known.has(e.id));
 
-    // Awaited, not fire-and-forget: the live-update subscription starts right
-    // after this, and its first snapshot would otherwise arrive before the
-    // seed had landed and replace the program with nothing.
+    exercises = [...exercises, ...missing];
+    programs = seed.programs;
+    storedSettings = {
+      ...seed.settings,
+      ...storedSettings,
+      activeProgramId: seed.programs[0]?.id ?? null,
+      seedVersion: SEED_VERSION,
+    };
+
+    set({ status: 'ready', storage: adapter.kind });
+
+    // Awaited: the live-update subscription starts right after this, and its
+    // first snapshot would otherwise arrive before the write had landed.
     try {
-      await adapter.replaceAll('exercises', snapshot.exercises);
-      await adapter.replaceAll('programs', snapshot.programs);
-      await adapter.setKV(KV_SETTINGS, snapshot.settings);
+      if (missing.length) await adapter.putMany('exercises', missing);
+      await adapter.putMany('programs', programs);
+      await adapter.setKV(KV_SETTINGS, storedSettings);
     } catch (error) {
-      console.error('[gym-os] не удалось сохранить начальные данные', error);
+      console.error('[gym-os] не удалось сохранить программу', error);
     }
-    return;
   }
 
-  const storedSettings = kv[KV_SETTINGS] as Settings | undefined;
-  const programs = loaded.programs ?? [];
   const settings: Settings = {
     ...defaultSettings(programs.find((p) => p.status === 'active')?.id ?? null),
     ...storedSettings,
-    // Mode configs gain fields over time; keep the defaults as the floor.
     modes: mergeModes(storedSettings?.modes),
   };
 
@@ -886,7 +908,7 @@ async function loadFrom(
     status: 'ready',
     storage: adapter.kind,
     settings,
-    exercises: loaded.exercises ?? [],
+    exercises,
     programs,
     sessions: loaded.sessions ?? [],
     notes: loaded.notes ?? [],
