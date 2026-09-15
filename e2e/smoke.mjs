@@ -1,0 +1,298 @@
+/**
+ * End-to-end smoke test: drives the built app in a real browser through the
+ * path that matters — open, start a workout, complete sets, finish, review.
+ *
+ * Needs a `next build` output in ./out and Playwright available:
+ *   npx next build
+ *   node --experimental-default-type=module e2e/smoke.mjs
+ *
+ * Set SMOKE_BASE_URL to test against an already-running server.
+ */
+import { createServer } from 'node:http';
+import { readFile, stat } from 'node:fs/promises';
+import { extname, join, normalize } from 'node:path';
+import { chromium } from 'playwright';
+
+const ROOT = new URL('../out/', import.meta.url).pathname;
+const PORT = Number(process.env.SMOKE_PORT ?? 4319);
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/manifest+json',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.woff2': 'font/woff2',
+  '.txt': 'text/plain; charset=utf-8',
+};
+
+/** Static server that resolves extensionless routes to their .html file. */
+async function resolveFile(pathname) {
+  const clean = normalize(decodeURIComponent(pathname)).replace(/^(\.\.[/\\])+/, '');
+  const candidates = [
+    join(ROOT, clean),
+    join(ROOT, `${clean}.html`),
+    join(ROOT, clean, 'index.html'),
+  ];
+  for (const candidate of candidates) {
+    try {
+      const info = await stat(candidate);
+      if (info.isFile()) return candidate;
+    } catch {
+      /* try the next candidate */
+    }
+  }
+  return null;
+}
+
+function startServer() {
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url, `http://localhost:${PORT}`);
+    const file = await resolveFile(url.pathname);
+    if (!file) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('not found');
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': MIME[extname(file)] ?? 'application/octet-stream' });
+    res.end(await readFile(file));
+  });
+  return new Promise((resolve) => server.listen(PORT, () => resolve(server)));
+}
+
+/* ── Test harness ──────────────────────────────────────────────────── */
+
+let passed = 0;
+const failures = [];
+
+function check(label, condition, detail = '') {
+  if (condition) {
+    passed += 1;
+    console.log(`  ✓ ${label}`);
+  } else {
+    failures.push(`${label}${detail ? ` — ${detail}` : ''}`);
+    console.log(`  ✗ ${label}${detail ? ` — ${detail}` : ''}`);
+  }
+}
+
+async function main() {
+  const external = process.env.SMOKE_BASE_URL;
+  const server = external ? null : await startServer();
+  const base = external ?? `http://localhost:${PORT}`;
+
+  const browser = await chromium.launch({
+    executablePath: process.env.CHROMIUM_PATH || undefined,
+  });
+  const context = await browser.newContext({
+    viewport: { width: 393, height: 852 }, // iPhone 15 Pro
+    deviceScaleFactor: 3,
+    isMobile: true,
+    hasTouch: true,
+    locale: 'ru-RU',
+  });
+  const page = await context.newPage();
+
+  const consoleErrors = [];
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text());
+  });
+  page.on('pageerror', (error) => consoleErrors.push(`pageerror: ${error.message}`));
+
+  // `innerText` reflects CSS `text-transform`, so labels styled uppercase come
+  // back uppercase. Compare case-insensitively rather than guessing.
+  const text = async () => (await page.locator('body').innerText()).toUpperCase();
+  const has = (body, ...needles) => needles.every((n) => body.includes(n.toUpperCase()));
+
+  console.log('\nHOME');
+  await page.goto(`${base}/`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('text=START WORKOUT', { timeout: 15_000 });
+  let body = await text();
+  check('greets the user', /GOOD (MORNING|AFTERNOON|EVENING|NIGHT), ZVEAT/.test(body), body.slice(0, 80));
+  check('shows the preloaded program', has(body, 'СПЛИТ — НАБОР МАССЫ'));
+  check('offers a next workout day', /DAY [1-5]/.test(body));
+  check('counts exercises and sets', /\d+ EXERCISES · \d+ WORKING SETS/.test(body));
+
+  console.log('\nSTART WORKOUT');
+  await page.click('text=START WORKOUT');
+  await page.waitForURL(/\/workout\/start/);
+  body = await text();
+  check('lists all five training days', (body.match(/DAY [1-5]/g) ?? []).length >= 5);
+  check('offers all four modes', has(body, 'Normal', 'Light', 'Heavy', 'Recovery'));
+
+  console.log('\nLIGHT MODE PREVIEW');
+  await page.click('button:has-text("Light")');
+  await page.waitForSelector('text=Что изменится');
+  body = await text();
+  // 50 kg at 85% = 42.5, and one set fewer: exactly the spec's preview.
+  check('previews the light-mode weight (50 → 42.5)', has(body, '42.5 kg'));
+  check('previews fewer sets', /50 KG × 12 × 4[\s\S]*42\.5 KG × 12 × 3/.test(body));
+
+  console.log('\nACTIVE WORKOUT (normal)');
+  await page.click('button:has-text("Normal")');
+  await page.click('button:has-text("START WORKOUT")');
+  await page.waitForURL(/\/workout$/);
+  await page.waitForSelector('text=exercises completed');
+  body = await text();
+  check('shows the workout clock', /\d\d:\d\d/.test(body));
+  check('lists day 1 exercises', has(body, 'Жим штанги лежа', 'Разводка в тренажере'));
+  check('marks the current exercise', has(body, 'Current'));
+  check('starts at zero progress', has(body, '0 / 5 exercises completed'));
+  check('hides the bottom nav during a workout', (await page.locator('nav a:has-text("Programs")').count()) === 0);
+
+  console.log('\nEXERCISE SCREEN');
+  await page.click('a:has-text("Жим штанги лежа")');
+  await page.waitForURL(/\/workout\/exercise/);
+  await page.waitForSelector('text=COMPLETE SET');
+  body = await text();
+  check('shows the plan from the program', has(body, 'План: 50 kg × 12'));
+  check('offers the exercise detail sheet', has(body, 'Инфо'));
+  check('shows "first time" with no history', has(body, 'Первый раз'));
+  check('offers the difficulty picker', has(body, 'EASY', 'GOOD', 'HARD', 'FAILURE'));
+
+  await page.click('button:has-text("Инфо")');
+  await page.waitForSelector('text=Key points');
+  body = await text();
+  check('inherits technique from the library', has(body, 'Лопатки сведены'));
+  check('shows the machine settings tab content', has(body, 'Техника', 'Заметки', 'История'));
+  await page.click('button[aria-label="Закрыть"] >> nth=1');
+  await page.waitForSelector('button:has-text("COMPLETE SET")');
+
+  console.log('\nCOMPLETE A SET');
+  await page.click('button[aria-label="Плюс 2.5"]'); // 50 -> 52.5
+  await page.click('button:has-text("GOOD")');
+  await page.click('button:has-text("COMPLETE SET")');
+  await page.waitForSelector('button:text-is("+30 СЕК")', { timeout: 5000 });
+  body = await text();
+  check('starts the rest timer automatically', has(body, 'Отдых'));
+  check('counts the rest down from the exercise rest time', /0[12]:\d\d/.test(body));
+  check('offers +30 sec and skip', has(body, '+30 СЕК', 'ПРОПУСТИТЬ'));
+
+  await page.click('button:text-is("ПРОПУСТИТЬ")');
+  await page.waitForSelector('button:has-text("COMPLETE SET")');
+  body = await text();
+  check('records the actual weight, not the plan', has(body, '52.5 × 12'));
+  check('moves on to set 2 of 4', has(body, 'Set 2 of 4'));
+
+  console.log('\nFINISH THE EXERCISE');
+  for (let i = 0; i < 3; i += 1) {
+    await page.click('button:has-text("COMPLETE SET")');
+    const skip = page.locator('button:text-is("ПРОПУСТИТЬ")');
+    if (await skip.count()) await skip.click();
+    await page.waitForTimeout(200);
+  }
+  body = await text();
+  check('completes every set in the plan', has(body, 'Все подходы выполнены'));
+  // With sets done, "next exercise" becomes the primary action.
+  check(
+    'promotes moving on once the exercise is done',
+    await page.locator('button:has-text("ДАЛЕЕ")').first().evaluate((el) => el.className.includes('bg-accent')),
+  );
+
+  await page.click('a[aria-label="К списку упражнений"]');
+  await page.waitForURL(/\/workout$/);
+  body = await text();
+  check('workout progress reflects the finished exercise', has(body, '1 / 5 exercises completed'));
+
+  console.log('\nRELOAD MID-WORKOUT');
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForSelector('text=exercises completed');
+  body = await text();
+  check('a live workout survives a reload', has(body, '1 / 5 exercises completed'));
+
+  console.log('\nFINISH THE WORKOUT');
+  await page.click('button:has-text("ЗАВЕРШИТЬ ТРЕНИРОВКУ")');
+  await page.waitForSelector('text=Завершить тренировку?');
+  await page.click('div[role="dialog"] button:has-text("Завершить")');
+  await page.waitForURL(/\/workout\/review/);
+  await page.waitForSelector('text=Progression review');
+  body = await text();
+  check('summarises the workout', has(body, 'Duration', 'Working sets'));
+  check(
+    'recommends a weight change for the exercise trained',
+    /МОЖНО ПРИБАВИТЬ|ДЕРЖИМ ВЕС|ЛУЧШЕ СНИЗИТЬ/.test(body),
+  );
+  check('offers accept / edit / ignore', has(body, 'ACCEPT', 'EDIT', 'IGNORE'));
+
+  console.log('\nHISTORY');
+  await page.goto(`${base}/history`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('text=История');
+  body = await text();
+  check('lists the finished workout', has(body, 'ГРУДЬ + ТРИЦЕПС'));
+  check('shows the mode badge', has(body, 'NORMAL'));
+
+  await page.click('a:has-text("ГРУДЬ + ТРИЦЕПС")');
+  await page.waitForURL(/\/history\/session/);
+  body = await text();
+  check('workout summary shows the sets performed', has(body, '52.5 × 12'));
+  check('keeps untouched exercises visible as skipped', has(body, 'Пропущено'));
+
+  console.log('\nPROGRESS');
+  await page.goto(`${base}/progress`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('text=Overview');
+  body = await text();
+  check('overview counts the workout', /WORKOUTS[\s\S]{0,12}1/.test(body));
+  check('reports total volume', has(body, 'Total volume'));
+  check('breaks volume down by muscle group', has(body, 'Chest', 'Triceps'));
+
+  console.log('\nPROGRAMS');
+  await page.goto(`${base}/programs`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('text=Программы');
+  body = await text();
+  check('shows the active program', has(body, 'Active', 'СПЛИТ — НАБОР МАССЫ'));
+  check('counts days, exercises and sets', /5 DAYS · \d+ EXERCISES · \d+ SETS/.test(body));
+
+  await page.click('a:has-text("Редактировать")');
+  await page.waitForURL(/\/programs\/editor/);
+  body = await text();
+  check('editor opens on day 1', has(body, 'ГРУДЬ + ТРИЦЕПС'));
+  check('shows the prescribed sets', has(body, '50 kg × 12 × 4'));
+  check('shows machine settings from the program', has(body, 'Position: 2'));
+
+  console.log('\nIMPORT');
+  await page.goto(`${base}/more/import`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('text=ПРИМЕР');
+  await page.click('button:has-text("ПРИМЕР")');
+  await page.click('button:has-text("РАЗОБРАТЬ")');
+  await page.waitForSelector('text=Предпросмотр');
+  body = await text();
+  check('parses the pasted notes', has(body, 'Предпросмотр'));
+  check('matches exercises to the library', has(body, 'Жим штанги лежа'));
+  check('shows the parsed sets', has(body, '50×12'));
+
+  await page.click('button:text-is("ИМПОРТИРОВАТЬ")');
+  await page.waitForSelector('text=Импорт завершён');
+  body = await text();
+  check('imports the workouts', has(body, 'Добавлено тренировок: 1'));
+
+  console.log('\nOFFLINE');
+  await context.setOffline(true);
+  await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' }).catch(() => undefined);
+  await page.waitForSelector('text=START WORKOUT', { timeout: 15_000 }).catch(() => undefined);
+  body = await text().catch(() => '');
+  check('the app opens with no network', has(body, 'START WORKOUT'), body.slice(0, 120));
+  check('data survives offline', has(body, 'СПЛИТ — НАБОР МАССЫ'));
+  await context.setOffline(false);
+
+  console.log('\nCONSOLE');
+  const real = consoleErrors.filter(
+    (e) => !/favicon|manifest|Failed to load resource/i.test(e),
+  );
+  check('no console errors', real.length === 0, real.slice(0, 3).join(' | '));
+
+  await browser.close();
+  server?.close();
+
+  console.log(`\n${passed} passed, ${failures.length} failed`);
+  if (failures.length) {
+    console.log('\nFailures:');
+    failures.forEach((f) => console.log(`  - ${f}`));
+    process.exit(1);
+  }
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

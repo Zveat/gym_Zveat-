@@ -122,7 +122,7 @@ export function recommendForExercise(options: RecommendOptions): ProgressionReco
 }
 
 interface RuleContext {
-  config: ProgressionConfig;
+  config?: ProgressionConfig;
   increment: number;
   sets: SessionExercise['sets'];
   roundStep: number;
@@ -136,7 +136,7 @@ function doubleProgression(
   ctx: RuleContext,
 ): ProgressionRecommendation {
   const { config, increment, sets, roundStep, currentWeight } = ctx;
-  const target = config.repTarget ?? Math.max(...sets.map((s) => s.plan.repsMax ?? 12));
+  const target = config?.repTarget ?? Math.max(...sets.map((s) => s.plan.repsMax ?? 12));
   const reps = sets.map((s) => s.actual!.reps);
   const allHit = reps.every((r) => r >= target);
   const minReps = Math.min(...reps);
@@ -177,8 +177,8 @@ function customProgression(
   ctx: RuleContext,
 ): ProgressionRecommendation {
   const { config, increment, sets, roundStep, currentWeight, sessions = [], entry } = ctx;
-  const target = config.repTarget ?? Math.max(...sets.map((s) => s.plan.repsMax ?? 12));
-  const need = Math.max(1, config.consecutiveSessions ?? 2);
+  const target = config?.repTarget ?? Math.max(...sets.map((s) => s.plan.repsMax ?? 12));
+  const need = Math.max(1, config?.consecutiveSessions ?? 2);
   const reps = sets.map((s) => s.actual!.reps);
   const hitNow = reps.every((r) => r >= target);
 
@@ -187,7 +187,7 @@ function customProgression(
       ...base,
       verdict: 'hold',
       repTarget: target,
-      reason: config.note
+      reason: config?.note
         ? `Правило: ${config.note}`
         : `Нужно ${target} во всех подходах ${need} ${need === 1 ? 'тренировку' : 'тренировки'} подряд.`,
       suggestedWeight: currentWeight,
