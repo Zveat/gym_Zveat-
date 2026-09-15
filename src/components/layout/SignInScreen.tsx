@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Button, Card, Eyebrow, Notice, SegmentedControl } from '@/components/ui/primitives';
 import { Field, TextInput } from '@/components/ui/inputs';
-import { describeAuthError, register, signIn } from '@/data/firebase';
+import { describeAuthError, register, signIn } from '@/data/firebase-app';
 
 /**
  * The only screen shown before the data is known.

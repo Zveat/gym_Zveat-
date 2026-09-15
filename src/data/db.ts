@@ -33,10 +33,16 @@ const KV_STORE = 'kv';
 
 export type StorageKind = 'firestore' | 'indexeddb' | 'localstorage' | 'memory';
 
+/** What a live subscription delivers: only what actually changed. */
+export interface CollectionChange {
+  upserted: { id: string }[];
+  removed: string[];
+}
+
 export interface PersistenceAdapter {
   readonly kind: StorageKind;
   /** Live updates from other devices. Only the cloud adapter implements it. */
-  watch?(collection: CollectionName, fn: (records: { id: string }[]) => void): () => void;
+  watch?(collection: CollectionName, fn: (change: CollectionChange) => void): () => void;
   loadAll(): Promise<Partial<DatabaseSnapshot> & { kv: Record<string, unknown> }>;
   put(collection: CollectionName, record: { id: string }): Promise<void>;
   putMany(collection: CollectionName, records: { id: string }[]): Promise<void>;

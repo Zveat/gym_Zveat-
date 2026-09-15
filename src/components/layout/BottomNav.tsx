@@ -42,7 +42,7 @@ export function BottomNav() {
   return (
     <nav
       className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-bg/92 backdrop-blur-xl"
-      style={{ paddingBottom: 'var(--safe-bottom)' }}
+      style={{ paddingBottom: 'var(--nav-safe-bottom)' }}
     >
       <ul className="mx-auto flex max-w-lg">
         {ITEMS.map((item) => {
@@ -53,7 +53,7 @@ export function BottomNav() {
                 href={item.href}
                 aria-current={active ? 'page' : undefined}
                 className={cx(
-                  'flex h-[64px] flex-col items-center justify-center gap-1 transition-colors',
+                  'flex h-[58px] flex-col items-center justify-center gap-0.5 transition-colors',
                   active ? 'text-accent' : 'text-faint active:text-dim',
                 )}
               >

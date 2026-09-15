@@ -26,7 +26,7 @@ export function Screen({
       style={{
         paddingTop: 'calc(var(--safe-top) + 12px)',
         paddingBottom: padBottom
-          ? 'calc(var(--nav-height) + var(--safe-bottom) + 28px)'
+          ? 'calc(var(--nav-height) + var(--nav-safe-bottom) + 24px)'
           : 'calc(var(--safe-bottom) + 12px)',
       }}
     >

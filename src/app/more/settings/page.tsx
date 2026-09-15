@@ -14,7 +14,7 @@ import {
   RowGroup,
   SectionTitle,
 } from '@/components/ui/primitives';
-import { signOutAccount } from '@/data/firebase';
+import { signOutAccount } from '@/data/firebase-app';
 import { MODE_COLOR, MODE_ORDER } from '@/domain/modes';
 import type { DatabaseSnapshot, ModeConfig, WorkoutMode } from '@/domain/types';
 import { MODE_LABEL } from '@/engine/format';

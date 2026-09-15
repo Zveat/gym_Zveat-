@@ -31,12 +31,9 @@ import {
   type PersistenceAdapter,
   type StorageKind,
 } from '@/data/db';
-import {
-  FirestoreAdapter,
-  isCloudConfigured,
-  watchAccount,
-  type Account,
-} from '@/data/firebase';
+import { isCloudConfigured, watchAccount, type Account } from '@/data/firebase-app';
+// Type-only: the implementation is fetched after sign-in, not at startup.
+import type { FirestoreAdapter } from '@/data/firestore-adapter';
 import { detectPRs, personalRecords, type DetectedPR } from '@/engine/records';
 import { applyRecommendation, type ProgressionRecommendation } from '@/engine/progression';
 import * as engine from '@/engine/session';
@@ -229,6 +226,9 @@ export const useStore = create<Store>((set, get) => ({
 
     set({ status: 'loading', cloud: { configured: true, account, status: 'checking' } });
 
+    // The database layer is the heaviest part of the app and useless without
+    // an account, so it is fetched here rather than at startup.
+    const { FirestoreAdapter } = await import('@/data/firestore-adapter');
     const adapter = new FirestoreAdapter(account.uid);
     await migrateDeviceDataIfNeeded(adapter);
     __setAdapter(adapter);
@@ -921,49 +921,56 @@ async function loadFrom(
 /**
  * Live updates from the user's other devices.
  *
- * One rule matters: a workout in progress on *this* device is never
- * overwritten. Everything else is server-wins, which is right for a single
- * user — the newest write is simply the truth.
+ * Changes are merged per record, not by replacing collections: a set save is
+ * acknowledged by the server within a second, and swapping the whole session
+ * list on every acknowledgement re-rendered the workout under the user's
+ * thumb. Merging also means an acknowledgement that changes nothing costs
+ * nothing.
+ *
+ * One rule stands above the merge: a workout in progress on *this* device is
+ * never touched by remote data. Everything else is server-wins, which is
+ * right for a single user — the newest write is simply the truth.
  */
 function startWatches(
   adapter: FirestoreAdapter,
   get: () => Store,
   set: (partial: Partial<StoreState>) => void,
 ) {
-  // The first snapshot of every collection merely repeats what `loadFrom` just
-  // read, so it is dropped. Acting on it is what lets a stale or still-empty
-  // read overwrite state the app has already established.
-  const primed = new Set<string>();
-  const isFirst = (name: string) => {
-    if (primed.has(name)) return false;
-    primed.add(name);
-    return true;
-  };
+  const collections: CollectionName[] = [
+    'exercises',
+    'programs',
+    'sessions',
+    'notes',
+    'painLogs',
+    'bodyWeightLogs',
+  ];
 
-  const simple: CollectionName[] = ['exercises', 'programs', 'notes', 'painLogs', 'bodyWeightLogs'];
-
-  for (const name of simple) {
+  for (const name of collections) {
     watches.push(
-      adapter.watch(name, (records) => {
-        if (isFirst(name)) return;
-        set({ [name]: records } as unknown as Partial<StoreState>);
+      adapter.watch(name, ({ upserted, removed }) => {
+        const current = get()[name] as { id: string }[];
+        const activeId =
+          name === 'sessions'
+            ? (get().sessions.find((s) => s.status === 'active')?.id ?? null)
+            : null;
+
+        const byId = new Map(current.map((record) => [record.id, record]));
+        let changed = false;
+
+        for (const id of removed) {
+          if (id === activeId) continue;
+          if (byId.delete(id)) changed = true;
+        }
+        for (const record of upserted) {
+          if (record.id === activeId) continue;
+          byId.set(record.id, record);
+          changed = true;
+        }
+
+        if (changed) set({ [name]: [...byId.values()] } as unknown as Partial<StoreState>);
       }),
     );
   }
-
-  watches.push(
-    adapter.watch('sessions', (records) => {
-      if (isFirst('sessions')) return;
-      const remote = records as unknown as WorkoutSession[];
-      const activeHere = get().sessions.find((s) => s.status === 'active');
-      if (!activeHere) {
-        set({ sessions: remote });
-        return;
-      }
-      // Keep the live workout exactly as this device has it.
-      set({ sessions: [...remote.filter((s) => s.id !== activeHere.id), activeHere] });
-    }),
-  );
 }
 
 /** Applies an engine function to the live session and persists the result. */

@@ -42,7 +42,13 @@
   --status-info: #0a84ff;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --nav-height: 64px;
+  /**
+   * The home-indicator inset is ~34px on a notched iPhone. Reserving all of it
+   * under the tab bar left a visibly dead strip and pushed the bar up away
+   * from the thumb, so only the part that actually overlaps is kept.
+   */
+  --nav-safe-bottom: max(4px, calc(env(safe-area-inset-bottom, 0px) - 14px));
+  --nav-height: 58px;
   color-scheme: dark;
 }
 
