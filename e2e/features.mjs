@@ -11,6 +11,7 @@ import {
   reporter,
   startServer,
   textHelpers,
+  VIEWPORTS,
 } from './harness.mjs';
 
 const PORT = Number(process.env.SMOKE_PORT ?? 4320);
@@ -334,6 +335,51 @@ async function main() {
   await page.waitForSelector('button:has-text("СОХРАНИТЬ В ИСТОРИЮ")');
   const addOverflow = await assertNoHorizontalOverflow(page);
   check('/history/add fits the screen with sets filled in', addOverflow === null, addOverflow ?? '');
+
+  // The spec names both iPhone Pro and Pro Max as test targets; the wider one
+  // is where a `max-w` column can leave the layout looking unanchored.
+  console.log('\nIPHONE PRO MAX (430×932)');
+  await page.setViewportSize(VIEWPORTS.proMax);
+  for (const url of ['/', '/workout/start', '/progress', '/more/settings']) {
+    await page.goto(`${base}${url}`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(250);
+    const wide = await assertNoHorizontalOverflow(page);
+    check(`${url} fits Pro Max`, wide === null, wide ?? '');
+  }
+  // On a phone the column fills the screen; what must hold is the side gutter,
+  // so nothing sits against the glass edge.
+  const gutter = await page.evaluate(() => {
+    const main = document.querySelector('main');
+    if (!main) return null;
+    const style = getComputedStyle(main);
+    const box = main.getBoundingClientRect();
+    return {
+      left: Math.round(box.left + parseFloat(style.paddingLeft)),
+      right: Math.round(innerWidth - box.right + parseFloat(style.paddingRight)),
+    };
+  });
+  check(
+    'keeps a side gutter on Pro Max',
+    gutter !== null && gutter.left >= 12 && gutter.right >= 12,
+    JSON.stringify(gutter),
+  );
+
+  // Above the column's max width it should centre instead of stretching.
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await page.goto(`${base}/`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(250);
+  const centred = await page.evaluate(() => {
+    const main = document.querySelector('main');
+    if (!main) return null;
+    const box = main.getBoundingClientRect();
+    return { left: Math.round(box.left), width: Math.round(box.width), vw: innerWidth };
+  });
+  check(
+    'centres the column on a wide screen instead of stretching',
+    centred !== null && centred.width <= 520 && centred.left > 100,
+    JSON.stringify(centred),
+  );
+  await page.setViewportSize(VIEWPORTS.pro);
 
   console.log('\nCONSOLE');
   const real = consoleErrors.filter((e) => !/favicon|manifest|Failed to load resource/i.test(e));

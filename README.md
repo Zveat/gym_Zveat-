@@ -26,7 +26,7 @@ npm run dev        # http://localhost:3000
 npm run build      # статический экспорт в ./out
 npm run typecheck
 npm test           # 94 теста на чистую логику
-npm run test:e2e   # 100 проверок в реальном браузере (нужен playwright)
+npm run test:e2e   # 106 проверок в реальном браузере (нужен playwright)
 ```
 
 `npm run test:e2e` требует Playwright и Chromium. Если они установлены

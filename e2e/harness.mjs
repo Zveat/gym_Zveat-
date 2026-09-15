@@ -50,11 +50,17 @@ export function startServer(port) {
   return new Promise((resolve) => server.listen(port, () => resolve(server)));
 }
 
+/** The two sizes the spec names as the test targets. */
+export const VIEWPORTS = {
+  pro: { width: 393, height: 852 },
+  proMax: { width: 430, height: 932 },
+};
+
 /** An iPhone-sized page with console errors collected. */
-export async function openApp(base) {
+export async function openApp(base, viewport = VIEWPORTS.pro) {
   const browser = await chromium.launch();
   const context = await browser.newContext({
-    viewport: { width: 393, height: 852 },
+    viewport,
     deviceScaleFactor: 3,
     isMobile: true,
     hasTouch: true,
