@@ -1,14 +1,17 @@
 import type { DatabaseSnapshot } from '@/domain/types';
 
 /**
- * Local-first storage. Every screen reads from memory and writes here in the
- * background, which is what makes COMPLETE SET feel instant and lets the whole
- * app work with no connection at all.
+ * Storage, behind one interface.
  *
- * Records are stored one per row, so saving a set writes a single session —
- * not the entire history. If IndexedDB is unavailable (private windows, locked
+ * Two implementations sit behind it: Firestore (`data/firebase.ts`) when the
+ * app is configured with a Firebase project, and the on-device stores here
+ * otherwise. The store above never knows which — it writes one record per set
+ * save and never waits on the result, so COMPLETE SET is instant either way.
+ *
+ * Records are stored one per row, so saving a set writes a single session, not
+ * the entire history. If IndexedDB is unavailable (private windows, locked
  * down browsers) we degrade to localStorage, and finally to memory, so the app
- * still runs instead of showing an error in the middle of a workout.
+ * still runs instead of failing in the middle of a workout.
  */
 
 export const DB_NAME = 'personal-gym-os';
@@ -28,10 +31,12 @@ export type CollectionName = (typeof COLLECTIONS)[number];
 /** Single-value rows (settings, rest timer) live here. */
 const KV_STORE = 'kv';
 
-export type StorageKind = 'indexeddb' | 'localstorage' | 'memory';
+export type StorageKind = 'firestore' | 'indexeddb' | 'localstorage' | 'memory';
 
 export interface PersistenceAdapter {
   readonly kind: StorageKind;
+  /** Live updates from other devices. Only the cloud adapter implements it. */
+  watch?(collection: CollectionName, fn: (records: { id: string }[]) => void): () => void;
   loadAll(): Promise<Partial<DatabaseSnapshot> & { kv: Record<string, unknown> }>;
   put(collection: CollectionName, record: { id: string }): Promise<void>;
   putMany(collection: CollectionName, records: { id: string }[]): Promise<void>;

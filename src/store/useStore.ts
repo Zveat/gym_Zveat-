@@ -23,7 +23,20 @@ import type {
   WorkoutMode,
   WorkoutSession,
 } from '@/domain/types';
-import { COLLECTIONS, getAdapter, type CollectionName, type StorageKind } from '@/data/db';
+import {
+  COLLECTIONS,
+  __setAdapter,
+  getAdapter,
+  type CollectionName,
+  type PersistenceAdapter,
+  type StorageKind,
+} from '@/data/db';
+import {
+  FirestoreAdapter,
+  isCloudConfigured,
+  watchAccount,
+  type Account,
+} from '@/data/firebase';
 import { detectPRs, personalRecords, type DetectedPR } from '@/engine/records';
 import { applyRecommendation, type ProgressionRecommendation } from '@/engine/progression';
 import * as engine from '@/engine/session';
@@ -44,15 +57,28 @@ export interface PRCelebration {
   at: number;
 }
 
+/** Where the data lives right now, and whether it is usable. */
+export interface CloudState {
+  /** A Firebase project is configured in this build. */
+  configured: boolean;
+  /** `null` while unknown or signed out. */
+  account: Account | null;
+  /** `signed_out` blocks the app behind the sign-in screen. */
+  status: 'off' | 'checking' | 'signed_out' | 'ready';
+}
+
 interface StoreState extends DatabaseSnapshot {
   status: 'loading' | 'ready';
   storage: StorageKind | null;
+  cloud: CloudState;
   rest: RestTimerState | null;
   celebration: PRCelebration | null;
 }
 
 interface StoreActions {
   init: () => Promise<void>;
+  /** Called by the auth listener: swaps storage to that account and reloads. */
+  attachAccount: (account: Account | null) => Promise<void>;
 
   updateSettings: (patch: Partial<Settings>) => void;
   updateMode: (mode: WorkoutMode, patch: Partial<ModeConfig>) => void;
@@ -159,54 +185,56 @@ function persistSettings(settings: Settings) {
 export const useStore = create<Store>((set, get) => ({
   status: 'loading',
   storage: null,
+  cloud: { configured: false, account: null, status: 'off' },
   rest: null,
   celebration: null,
   ...buildSeedSnapshot(nowStamp()),
 
+  /**
+   * Boot. With a Firebase project configured the app waits for the auth state
+   * before touching data — signing in as someone else must not merge into
+   * whatever happened to be cached on the device.
+   */
   async init() {
-    if (get().status === 'ready') return;
-    const adapter = await getAdapter();
-    const loaded = await adapter.loadAll();
-    const kv = loaded.kv ?? {};
+    if (initStarted) return;
+    initStarted = true;
 
-    const isEmpty =
-      !(loaded.programs?.length ?? 0) &&
-      !(loaded.exercises?.length ?? 0) &&
-      !kv[KV_SETTINGS];
+    if (!isCloudConfigured()) {
+      set({ cloud: { configured: false, account: null, status: 'off' } });
+      await loadFrom(await getAdapter(), set);
+      return;
+    }
 
-    if (isEmpty) {
-      // First launch: the user's real program is ready before they reach the gym.
-      const snapshot = buildSeedSnapshot(nowStamp());
-      set({ ...snapshot, status: 'ready', storage: adapter.kind, rest: null });
-      persist(async (a) => {
-        await a.replaceAll('exercises', snapshot.exercises);
-        await a.replaceAll('programs', snapshot.programs);
-        await a.setKV(KV_SETTINGS, snapshot.settings);
+    set({ cloud: { configured: true, account: null, status: 'checking' } });
+    watchAccount((account) => {
+      void get().attachAccount(account);
+    });
+  },
+
+  async attachAccount(account) {
+    stopWatches();
+
+    if (!account) {
+      __setAdapter(null);
+      set({
+        status: 'ready',
+        storage: null,
+        cloud: { configured: true, account: null, status: 'signed_out' },
       });
       return;
     }
 
-    const storedSettings = kv[KV_SETTINGS] as Settings | undefined;
-    const programs = loaded.programs ?? [];
-    const settings: Settings = {
-      ...defaultSettings(programs.find((p) => p.status === 'active')?.id ?? null),
-      ...storedSettings,
-      // Mode configs gain fields over time; keep the defaults as the floor.
-      modes: { ...DEFAULT_MODES, ...(storedSettings?.modes ?? {}) },
-    };
+    const current = get().cloud.account;
+    if (current?.uid === account.uid && get().cloud.status === 'ready') return;
 
-    set({
-      status: 'ready',
-      storage: adapter.kind,
-      settings,
-      exercises: loaded.exercises ?? [],
-      programs,
-      sessions: loaded.sessions ?? [],
-      notes: loaded.notes ?? [],
-      painLogs: loaded.painLogs ?? [],
-      bodyWeightLogs: loaded.bodyWeightLogs ?? [],
-      rest: (kv[KV_REST] as RestTimerState | undefined) ?? null,
-    });
+    set({ status: 'loading', cloud: { configured: true, account, status: 'checking' } });
+
+    const adapter = new FirestoreAdapter(account.uid);
+    __setAdapter(adapter);
+    await loadFrom(adapter, set);
+    set({ cloud: { configured: true, account, status: 'ready' } });
+
+    startWatches(adapter, get, set);
   },
 
   /* ── Settings ─────────────────────────────────────────────────────── */
@@ -742,6 +770,101 @@ export const useStore = create<Store>((set, get) => ({
     await adapter.setKV(KV_SETTINGS, snapshot.settings);
   },
 }));
+
+/** Set once per page load; the auth listener drives everything after that. */
+let initStarted = false;
+let watches: (() => void)[] = [];
+
+function stopWatches() {
+  watches.forEach((off) => off());
+  watches = [];
+}
+
+/**
+ * Loads a whole database into memory, seeding it on first use.
+ *
+ * Shared by the local and cloud paths so "first launch" means the same thing
+ * either way: an account with no program gets the user's real program.
+ */
+async function loadFrom(
+  adapter: PersistenceAdapter,
+  set: (partial: Partial<StoreState>) => void,
+): Promise<void> {
+  const loaded = await adapter.loadAll();
+  const kv = loaded.kv ?? {};
+
+  const isEmpty =
+    !(loaded.programs?.length ?? 0) && !(loaded.exercises?.length ?? 0) && !kv[KV_SETTINGS];
+
+  if (isEmpty) {
+    const snapshot = buildSeedSnapshot(nowStamp());
+    set({ ...snapshot, status: 'ready', storage: adapter.kind, rest: null });
+    persist(async (a) => {
+      await a.replaceAll('exercises', snapshot.exercises);
+      await a.replaceAll('programs', snapshot.programs);
+      await a.setKV(KV_SETTINGS, snapshot.settings);
+    });
+    return;
+  }
+
+  const storedSettings = kv[KV_SETTINGS] as Settings | undefined;
+  const programs = loaded.programs ?? [];
+  const settings: Settings = {
+    ...defaultSettings(programs.find((p) => p.status === 'active')?.id ?? null),
+    ...storedSettings,
+    // Mode configs gain fields over time; keep the defaults as the floor.
+    modes: { ...DEFAULT_MODES, ...(storedSettings?.modes ?? {}) },
+  };
+
+  set({
+    status: 'ready',
+    storage: adapter.kind,
+    settings,
+    exercises: loaded.exercises ?? [],
+    programs,
+    sessions: loaded.sessions ?? [],
+    notes: loaded.notes ?? [],
+    painLogs: loaded.painLogs ?? [],
+    bodyWeightLogs: loaded.bodyWeightLogs ?? [],
+    rest: (kv[KV_REST] as RestTimerState | undefined) ?? null,
+  });
+}
+
+/**
+ * Live updates from the user's other devices.
+ *
+ * One rule matters: a workout in progress on *this* device is never
+ * overwritten. Everything else is server-wins, which is right for a single
+ * user — the newest write is simply the truth.
+ */
+function startWatches(
+  adapter: FirestoreAdapter,
+  get: () => Store,
+  set: (partial: Partial<StoreState>) => void,
+) {
+  const simple: CollectionName[] = ['exercises', 'programs', 'notes', 'painLogs', 'bodyWeightLogs'];
+
+  for (const name of simple) {
+    watches.push(
+      adapter.watch(name, (records) => {
+        set({ [name]: records } as unknown as Partial<StoreState>);
+      }),
+    );
+  }
+
+  watches.push(
+    adapter.watch('sessions', (records) => {
+      const remote = records as unknown as WorkoutSession[];
+      const activeHere = get().sessions.find((s) => s.status === 'active');
+      if (!activeHere) {
+        set({ sessions: remote });
+        return;
+      }
+      // Keep the live workout exactly as this device has it.
+      set({ sessions: [...remote.filter((s) => s.id !== activeHere.id), activeHere] });
+    }),
+  );
+}
 
 /** Applies an engine function to the live session and persists the result. */
 function applyToActive(

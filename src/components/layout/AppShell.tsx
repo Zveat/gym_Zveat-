@@ -5,6 +5,7 @@ import { useEffect, type ReactNode } from 'react';
 import { Skeleton } from '@/components/ui/primitives';
 import { useStore } from '@/store/useStore';
 import { BottomNav } from './BottomNav';
+import { SignInScreen } from './SignInScreen';
 import { RestTimerOverlay } from '@/components/workout/RestTimerOverlay';
 import { PRCelebrationOverlay } from '@/components/workout/PRCelebration';
 
@@ -16,6 +17,7 @@ import { PRCelebrationOverlay } from '@/components/workout/PRCelebration';
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const status = useStore((s) => s.status);
+  const cloud = useStore((s) => s.cloud);
   const init = useStore((s) => s.init);
   const pathname = usePathname();
 
@@ -25,6 +27,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const immersive = pathname.startsWith('/workout');
 
+  if (cloud.status === 'signed_out') return <SignInScreen />;
   if (status === 'loading') return <BootSkeleton />;
 
   return (

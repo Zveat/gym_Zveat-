@@ -5,6 +5,7 @@ import { Screen, ScreenHeader } from '@/components/layout/Screen';
 import { ConfirmDialog } from '@/components/ui/Sheet';
 import { Field, TextInput, Toggle } from '@/components/ui/inputs';
 import {
+  Button,
   Card,
   Chip,
   Eyebrow,
@@ -13,6 +14,7 @@ import {
   RowGroup,
   SectionTitle,
 } from '@/components/ui/primitives';
+import { signOutAccount } from '@/data/firebase';
 import { MODE_COLOR, MODE_ORDER } from '@/domain/modes';
 import type { DatabaseSnapshot, ModeConfig, WorkoutMode } from '@/domain/types';
 import { MODE_LABEL } from '@/engine/format';
@@ -32,8 +34,10 @@ export default function SettingsPage() {
   const importSnapshot = useStore((s) => s.importSnapshot);
   const resetEverything = useStore((s) => s.resetEverything);
 
+  const cloud = useStore((s) => s.cloud);
   const fileInput = useRef<HTMLInputElement>(null);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const exportData = () => {
@@ -65,6 +69,23 @@ export default function SettingsPage() {
   return (
     <Screen>
       <ScreenHeader title="Настройки" back="/more" />
+
+      {cloud.configured ? (
+        <section className="mb-6">
+          <SectionTitle>Аккаунт</SectionTitle>
+          <Card className="mt-2 p-4">
+            <Eyebrow>Вход выполнен</Eyebrow>
+            <p className="mt-1 text-[15px] font-medium">{cloud.account?.email ?? '—'}</p>
+            <p className="mt-2 text-[12px] leading-relaxed text-dim">
+              Тренировки хранятся на сервере и доступны с любого устройства. В зале приложение
+              работает без связи, записи уходят при первой возможности.
+            </p>
+            <Button size="md" full className="mt-3" onClick={() => setConfirmSignOut(true)}>
+              ВЫЙТИ ИЗ АККАУНТА
+            </Button>
+          </Card>
+        </section>
+      ) : null}
 
       <Card className="p-4">
         <Field label="Имя" hint="Показывается на главном экране">
@@ -178,22 +199,38 @@ export default function SettingsPage() {
         />
 
         <p className="mt-3 px-1 text-[11.5px] leading-relaxed text-dim">
-          Данные хранятся только на этом устройстве
-          {storage === 'indexeddb'
-            ? ' (IndexedDB)'
-            : storage === 'localstorage'
-              ? ' (localStorage — браузер ограничил доступ к IndexedDB)'
-              : storage === 'memory'
-                ? '. Внимание: браузер запретил сохранение, данные исчезнут после закрытия'
-                : ''}
-          . Делайте резервную копию перед сменой устройства.
+          {storage === 'firestore'
+            ? 'Данные хранятся на сервере (Firestore) и кэшируются на устройстве для работы без связи. Резервная копия нужна разве что для переноса в другое место.'
+            : storage === 'indexeddb'
+              ? 'Данные хранятся только на этом устройстве (IndexedDB). Делайте резервную копию перед сменой устройства.'
+              : storage === 'localstorage'
+                ? 'Данные хранятся только на этом устройстве (localStorage — браузер ограничил доступ к IndexedDB). Делайте резервную копию перед сменой устройства.'
+                : storage === 'memory'
+                  ? 'Внимание: браузер запретил сохранение — данные исчезнут после закрытия. Сохраните резервную копию.'
+                  : 'Хранилище определяется.'}
         </p>
       </section>
 
       <ConfirmDialog
+        open={confirmSignOut}
+        title="Выйти из аккаунта?"
+        message="Тренировки останутся на сервере — войдёте снова и всё будет на месте."
+        confirmLabel="Выйти"
+        onConfirm={() => {
+          void signOutAccount();
+          setConfirmSignOut(false);
+        }}
+        onCancel={() => setConfirmSignOut(false)}
+      />
+
+      <ConfirmDialog
         open={confirmReset}
         title="Сбросить все данные?"
-        message="Будут удалены все тренировки, программы, заметки и рекорды. Вернётся предустановленная программа. Это нельзя отменить."
+        message={
+          storage === 'firestore'
+            ? 'Будут удалены все тренировки, программы, заметки и рекорды — в том числе на сервере и на других устройствах. Вернётся предустановленная программа. Это нельзя отменить.'
+            : 'Будут удалены все тренировки, программы, заметки и рекорды. Вернётся предустановленная программа. Это нельзя отменить.'
+        }
         confirmLabel="Сбросить"
         danger
         onConfirm={() => {

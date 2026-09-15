@@ -1,0 +1,76 @@
+rules_version = '2';
+
+/**
+ * Personal Gym OS — Firestore security rules.
+ *
+ * One tree per signed-in user: users/{uid}/…  Nobody can read or write another
+ * user's training data, and an unauthenticated client sees nothing at all.
+ *
+ * Deploy:  firebase deploy --only firestore:rules
+ */
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{uid} {
+      allow read, write: if isOwner(uid);
+
+      // Settings live as a single document; everything else as collections.
+      match /meta/{docId} {
+        allow read, write: if isOwner(uid);
+      }
+      match /exercises/{docId} {
+        allow read, write: if isOwner(uid) && validExercise();
+      }
+      match /programs/{docId} {
+        allow read, write: if isOwner(uid);
+      }
+      match /sessions/{docId} {
+        allow read, write: if isOwner(uid) && validSession();
+      }
+      match /notes/{docId} {
+        allow read, write: if isOwner(uid);
+      }
+      match /painLogs/{docId} {
+        allow read, write: if isOwner(uid);
+      }
+      match /bodyWeightLogs/{docId} {
+        allow read, write: if isOwner(uid);
+      }
+    }
+
+    // Anything not matched above is denied.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+
+  function isOwner(uid) {
+    return request.auth != null && request.auth.uid == uid;
+  }
+
+  /**
+   * Shape checks only — the rules deliberately do not police training logic.
+   * Their job is to stop a corrupted or hostile client from writing something
+   * the app cannot read back, not to re-implement the app.
+   */
+  function validSession() {
+    let d = request.resource.data;
+    return request.method == 'delete' || (
+      d.id is string &&
+      d.date is string &&
+      d.status in ['active', 'completed'] &&
+      d.exercises is list &&
+      d.exercises.size() <= 60
+    );
+  }
+
+  function validExercise() {
+    let d = request.resource.data;
+    return request.method == 'delete' || (
+      d.id is string &&
+      d.name is string &&
+      d.name.size() > 0 &&
+      d.name.size() <= 200
+    );
+  }
+}
