@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Skeleton } from '@/components/ui/primitives';
 import { useStore } from '@/store/useStore';
 import { BottomNav } from './BottomNav';
@@ -56,6 +56,35 @@ function BootSkeleton() {
       </div>
       <Skeleton className="mt-4 h-28 w-full rounded-[var(--radius-card)]" />
       <span className="sr-only">Загрузка</span>
+      <BootProgress />
     </div>
+  );
+}
+
+/**
+ * A boot that takes a while must say so. Shimmering placeholders with no text
+ * read as a frozen app, and the one thing the user cannot tell from them is
+ * whether waiting will help. Silent for the first seconds so a normal launch
+ * stays clean.
+ */
+function BootProgress() {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const started = Date.now();
+    const timer = window.setInterval(() => {
+      setElapsed(Math.round((Date.now() - started) / 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  if (elapsed < 3) return null;
+
+  return (
+    <p className="mt-6 text-center text-[13px] leading-relaxed text-dim">
+      {elapsed < 9
+        ? 'Соединяемся с аккаунтом…'
+        : 'Сеть отвечает медленно. Приложение откроется, как только ответит — данные уже сохранены и не потеряются.'}
+    </p>
   );
 }

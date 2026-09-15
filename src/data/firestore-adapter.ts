@@ -73,37 +73,61 @@ export class FirestoreAdapter implements PersistenceAdapter {
     return doc(getDb(), 'users', this.uid, 'meta', `${META_DOC}_${key}`);
   }
 
-  /**
-   * Reads the device's cache first and only asks the server when the cache has
-   * nothing. The cache is authoritative enough to open the app: whatever the
-   * server knows that the cache does not arrives moments later through the
-   * live subscriptions. Waiting for a round trip before first paint is what
-   * made opening the app feel slow, especially on gym Wi-Fi.
-   */
-  private async read(name: string): Promise<QuerySnapshot<DocumentData>> {
+  /** A cache read that reports a miss as `null` instead of throwing. */
+  private async fromCache(name: string): Promise<QuerySnapshot<DocumentData> | null> {
     try {
-      const cached = await getDocsFromCache(this.path(name));
-      if (!cached.empty) return cached;
+      return await getDocsFromCache(this.path(name));
     } catch {
       // No cache yet (first run on this device, or storage unavailable).
+      return null;
     }
-    return getDocs(this.path(name));
+  }
+
+  /**
+   * Reads every collection, from the device's cache when the cache is warm.
+   *
+   * An empty cached collection is ambiguous: it means either "nothing there"
+   * or "not cached yet". Treating it as a miss cost a network round trip per
+   * empty collection on *every* launch — and a new account has four of them
+   * (sessions, notes, painLogs, bodyWeightLogs), so opening the app always
+   * waited on the network even though everything needed was already local.
+   *
+   * `programs` settles it without a flag to go stale: it is seeded on first
+   * use and never empty afterwards, so a non-empty cached read proves the
+   * cache is alive and every other collection can be answered from it. If it
+   * comes back empty the cache is cold or was evicted, and everything is read
+   * from the server as before.
+   *
+   * The cache is authoritative enough to open the app: whatever the server
+   * knows that the cache does not arrives moments later through the live
+   * subscriptions, which merge per record.
+   */
+  private async readAll(names: readonly string[]) {
+    const programs = await this.fromCache('programs');
+    const warm = programs !== null && !programs.empty;
+
+    return Promise.all(
+      names.map(async (name): Promise<[string, QuerySnapshot<DocumentData>]> => {
+        if (warm) {
+          if (name === 'programs') return [name, programs];
+          const cached = await this.fromCache(name);
+          if (cached) return [name, cached];
+        }
+        return [name, await getDocs(this.path(name))];
+      }),
+    );
   }
 
   async loadAll() {
     const result: Record<string, unknown> = {};
-    const [, meta] = await Promise.all([
-      Promise.all(
-        COLLECTIONS.map(async (name) => {
-          const snapshot = await this.read(name);
-          result[name] = snapshot.docs.map((d) => d.data());
-        }),
-      ),
-      this.read('meta'),
-    ]);
+    const snapshots = await this.readAll([...COLLECTIONS, 'meta']);
+    const byName = new Map(snapshots);
+    for (const name of COLLECTIONS) {
+      result[name] = byName.get(name)?.docs.map((d) => d.data()) ?? [];
+    }
 
     const kv: Record<string, unknown> = {};
-    meta.docs.forEach((d) => {
+    byName.get('meta')?.docs.forEach((d) => {
       const key = d.id.startsWith(`${META_DOC}_`) ? d.id.slice(META_DOC.length + 1) : d.id;
       kv[key] = (d.data() as { value?: unknown }).value;
     });

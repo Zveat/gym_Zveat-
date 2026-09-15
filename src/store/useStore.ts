@@ -230,7 +230,7 @@ export const useStore = create<Store>((set, get) => ({
     // an account, so it is fetched here rather than at startup.
     const { FirestoreAdapter } = await import('@/data/firestore-adapter');
     const adapter = new FirestoreAdapter(account.uid);
-    await migrateDeviceDataIfNeeded(adapter);
+    await migrateDeviceDataIfNeeded(adapter, account.uid);
     __setAdapter(adapter);
     await loadFrom(adapter, set);
     set({ cloud: { configured: true, account, status: 'ready' } });
@@ -796,6 +796,26 @@ function stopWatches() {
   watches = [];
 }
 
+const MIGRATED_KEY = (uid: string) => `gym-os:device-migrated:${uid}`;
+
+/** One-shot marker, so a finished migration is never reconsidered. */
+function migrationSettled(uid: string): boolean {
+  try {
+    return localStorage.getItem(MIGRATED_KEY(uid)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markMigrationSettled(uid: string): void {
+  try {
+    localStorage.setItem(MIGRATED_KEY(uid), '1');
+  } catch {
+    // Without the marker the checks below simply run again; they are cheap
+    // now that the device is probed first.
+  }
+}
+
 /**
  * First sign-in on a device that was already used without an account.
  *
@@ -806,22 +826,40 @@ function stopWatches() {
  *
  * Seeded-but-untouched data is uploaded too: it is identical to what the
  * account would have been seeded with anyway.
+ *
+ * This is a once-per-account question, but it used to be asked on every cold
+ * start — and it asked the expensive side first: a full read of the account
+ * over the network, thrown away, before `loadFrom` read everything again.
+ * Two round trips before first paint, every launch. Now a marker settles it
+ * outright, and without one the device is read first, because it is local and
+ * because an empty device means there is nothing to migrate either way.
  */
-async function migrateDeviceDataIfNeeded(cloud: PersistenceAdapter): Promise<void> {
+async function migrateDeviceDataIfNeeded(cloud: PersistenceAdapter, uid: string): Promise<void> {
+  if (migrationSettled(uid)) return;
+
   try {
+    const local = await getAdapter();
+    if (local.kind === 'firestore') {
+      markMigrationSettled(uid);
+      return;
+    }
+    const device = await local.loadAll();
+    const deviceHasData =
+      (device.programs?.length ?? 0) > 0 || (device.exercises?.length ?? 0) > 0;
+    if (!deviceHasData) {
+      markMigrationSettled(uid);
+      return;
+    }
+
     const remote = await cloud.loadAll();
     const cloudHasData =
       (remote.programs?.length ?? 0) > 0 ||
       (remote.exercises?.length ?? 0) > 0 ||
       Boolean(remote.kv?.[KV_SETTINGS]);
-    if (cloudHasData) return;
-
-    const local = await getAdapter();
-    if (local.kind === 'firestore') return;
-    const device = await local.loadAll();
-    const deviceHasData =
-      (device.programs?.length ?? 0) > 0 || (device.exercises?.length ?? 0) > 0;
-    if (!deviceHasData) return;
+    if (cloudHasData) {
+      markMigrationSettled(uid);
+      return;
+    }
 
     await cloud.replaceAll('exercises', device.exercises ?? []);
     await cloud.replaceAll('programs', device.programs ?? []);
@@ -832,6 +870,7 @@ async function migrateDeviceDataIfNeeded(cloud: PersistenceAdapter): Promise<voi
     const settings = device.kv?.[KV_SETTINGS];
     if (settings) await cloud.setKV(KV_SETTINGS, settings);
 
+    markMigrationSettled(uid);
     console.info('[gym-os] данные с устройства перенесены в аккаунт');
   } catch (error) {
     // A failed migration must not block sign-in: the device keeps its copy,
