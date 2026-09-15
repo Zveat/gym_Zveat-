@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useMemo } from 'react';
 import { Screen } from '@/components/layout/Screen';
+import { InstallHint } from '@/components/layout/DisplayMode';
 import {
   Badge,
   Card,
@@ -65,6 +66,10 @@ export default function HomePage() {
         </Eyebrow>
         <p className="mt-1 text-[13px] text-dim">{formatDateLong(now)}</p>
       </header>
+
+      <div className="mb-4 empty:mb-0">
+        <InstallHint />
+      </div>
 
       {activeWorkout ? (
         <ResumeCard session={activeWorkout} />

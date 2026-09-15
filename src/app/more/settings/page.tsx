@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { Screen, ScreenHeader } from '@/components/layout/Screen';
+import { useDisplayMode } from '@/components/layout/DisplayMode';
 import { ConfirmDialog } from '@/components/ui/Sheet';
 import { Field, TextInput, Toggle } from '@/components/ui/inputs';
 import {
@@ -13,6 +14,7 @@ import {
   Row,
   RowGroup,
   SectionTitle,
+  cx,
 } from '@/components/ui/primitives';
 import { signOutAccount } from '@/data/firebase-app';
 import { MODE_COLOR, MODE_ORDER } from '@/domain/modes';
@@ -211,6 +213,11 @@ export default function SettingsPage() {
         </p>
       </section>
 
+      <section className="mt-6">
+        <SectionTitle>Как открыто</SectionTitle>
+        <DisplayModeCard />
+      </section>
+
       <ConfirmDialog
         open={confirmSignOut}
         title="Выйти из аккаунта?"
@@ -241,6 +248,58 @@ export default function SettingsPage() {
         onCancel={() => setConfirmReset(false)}
       />
     </Screen>
+  );
+}
+
+/**
+ * The numbers behind "меню висит высоко". In a browser tab the viewport ends
+ * above the screen and the browser's toolbar fills the rest, tinted with our
+ * own `theme-color` — so it looks like the app left a gap. Showing the
+ * measurement makes the difference visible instead of arguable.
+ */
+function DisplayModeCard() {
+  const info = useDisplayMode();
+
+  if (!info) {
+    return (
+      <Card className="mt-2 p-4">
+        <p className="text-[13px] text-dim">Определяется…</p>
+      </Card>
+    );
+  }
+
+  const rows: [string, string][] = [
+    ['Режим', info.standalone ? 'Как приложение' : 'В браузере'],
+    ['Высота экрана', `${info.screenHeight} pt`],
+    ['Высота окна', `${info.viewportHeight} pt`],
+    ['Занято браузером', `${info.chrome} pt`],
+    ['Отступ снизу (iOS)', `${info.safeBottom} pt`],
+  ];
+
+  const explanation = info.standalone
+    ? 'Приложение запущено с домашнего экрана — нижнее меню стоит вплотную к краю окна, над индикатором home.'
+    : info.phone && info.chrome >= 24
+      ? `Браузер занимает ${info.chrome} pt внизу экрана. Меню приложения прижато к низу окна, а ниже идёт панель браузера — поэтому меню и выглядит приподнятым. Добавьте на домашний экран, чтобы её не было.`
+      : 'Открыто во вкладке браузера, но снизу браузер ничего не занимает — меню стоит вплотную к краю окна.';
+
+  return (
+    <>
+      <Card className="mt-2 p-4">
+        {rows.map(([label, value], index) => (
+          <div
+            key={label}
+            className={cx(
+              'flex items-baseline justify-between gap-3',
+              index > 0 && 'mt-2.5 border-t border-line pt-2.5',
+            )}
+          >
+            <span className="text-[13px] text-dim">{label}</span>
+            <span className="tnum text-[13.5px] font-medium">{value}</span>
+          </div>
+        ))}
+      </Card>
+      <p className="mt-2 px-1 text-[12px] leading-relaxed text-dim">{explanation}</p>
+    </>
   );
 }
 

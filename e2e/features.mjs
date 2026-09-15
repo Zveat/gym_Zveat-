@@ -410,6 +410,29 @@ async function main() {
   });
   check('the bottom nav is flush with the viewport edge', navGap === 0, `${navGap}px below it`);
 
+  // "The menu sits too high" has two indistinguishable causes in a screenshot:
+  // our own padding, or browser chrome below the viewport. Settings reports the
+  // measurement so it stops being a guess.
+  await page.goto(`${base}/more/settings`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('text=Как открыто');
+  await page.waitForTimeout(300);
+  const diag = await page.evaluate(() => {
+    const heading = [...document.querySelectorAll('*')].find(
+      (el) => el.textContent.trim() === 'Как открыто' && el.children.length === 0,
+    );
+    return heading?.closest('section')?.innerText ?? '';
+  });
+  check('settings reports how the app was opened', /Режим/.test(diag) && /В браузере|Как приложение/.test(diag), diag.slice(0, 60));
+  check('it reports what the browser takes', /Занято браузером\s*\n?\s*\d+ pt/.test(diag), diag.replace(/\n/g, ' | ').slice(0, 150));
+  check('it reports the iOS bottom inset', /Отступ снизу \(iOS\)/.test(diag));
+
+  // With nothing below the viewport there is nothing to advise, so the install
+  // hint must stay away — otherwise it nags on every desktop and in CI.
+  await page.goto(`${base}/`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(300);
+  const nag = await page.locator('text=панель браузера').count();
+  check('no install hint when the browser takes nothing', nag === 0, `${nag} shown`);
+
   console.log('\nTHE PRIMARY BUTTON CARRIES ITS OWN COLOUR');
   await page.goto(`${base}/more/body-weight`, { waitUntil: 'networkidle' });
   await page.waitForSelector('button:has-text("ДОБАВИТЬ")');
