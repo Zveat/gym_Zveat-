@@ -98,7 +98,7 @@ const DAYS: DaySpec[] = [
         restSeconds: 90,
         sets: [
           ...rep(4, 30, 12),
-          s(20, [8, 15], { setType: 'failure', note: 'Сбросить вес и до отказа' }),
+          s(null, [8, 15], { setType: 'failure', note: 'Сбросить вес и до отказа' }),
         ],
       },
     ],
@@ -140,7 +140,8 @@ const DAYS: DaySpec[] = [
         section: 'БИЦЕПС',
         restSeconds: 90,
         personalSettings: [{ label: 'Блины', value: '+5 кг' }],
-        sets: rep(4, 15, 10),
+        notes: 'Вес в программе не указан — внести с первой тренировки (гриф + блины по 5 кг).',
+        sets: rep(4, null, 10),
       },
       {
         exerciseId: 'ex_arm_curl_machine',
@@ -154,7 +155,7 @@ const DAYS: DaySpec[] = [
         restSeconds: 75,
         sets: [
           ...rep(4, 10, 12),
-          s(7.5, [8, 15], { setType: 'burnout', note: 'Закончить меньшим весом до отказа' }),
+          s(null, [8, 15], { setType: 'burnout', note: 'Закончить меньшим весом до отказа' }),
         ],
       },
     ],
@@ -297,7 +298,7 @@ const DAYS: DaySpec[] = [
         restSeconds: 90,
         sets: [
           ...rep(4, 55, 12),
-          s(40, [8, 15], { setType: 'failure', note: 'Сбросить вес и до отказа' }),
+          s(null, [8, 15], { setType: 'failure', note: 'Сбросить вес и до отказа' }),
         ],
       },
       {

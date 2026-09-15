@@ -52,6 +52,34 @@ describe('the preloaded program', () => {
     expect(parked.isEnabled).toBe(false);
   });
 
+  it('leaves a weight unset where the spec never gave one', () => {
+    // "Drop the weight and go to failure" names no weight, and an EZ bar's own
+    // weight varies by gym: guessing would put a number in the plan the user
+    // never wrote.
+    const rope = day1.exercises.find((e) => e.exerciseId === 'ex_rope_pushdown')!;
+    const dropSet = rope.sets.at(-1)!;
+    expect(dropSet.setType).toBe('failure');
+    expect(dropSet.targetWeight).toBeNull();
+    expect(dropSet.note).toContain('Сбросить вес');
+
+    const ezCurl = program.days[1].exercises.find((e) => e.exerciseId === 'ex_ez_curl')!;
+    expect(ezCurl.sets.every((s) => s.targetWeight === null)).toBe(true);
+    expect(ezCurl.sets.every((s) => s.targetRepsMax === 10)).toBe(true);
+    expect(ezCurl.personalSettings).toEqual([{ label: 'Блины', value: '+5 кг' }]);
+  });
+
+  it('keeps the weights the spec did give, including mid-exercise jumps', () => {
+    // Day 3 leg curl: 36/36 then 41/41 — "last two sets 41 kg".
+    const legCurl = program.days[2].exercises.find((e) => e.exerciseId === 'ex_leg_curl')!;
+    expect(legCurl.sets.map((s) => s.targetWeight)).toEqual([36, 36, 41, 41]);
+    // Day 5 trains the same exercise heavier.
+    const legCurlDay5 = program.days[4].exercises.find((e) => e.exerciseId === 'ex_leg_curl')!;
+    expect(legCurlDay5.sets.map((s) => s.targetWeight)).toEqual([45, 45, 50, 50]);
+    // The named burnout weight stays named.
+    const lateral = program.days[2].exercises.find((e) => e.exerciseId === 'ex_lateral_raise')!;
+    expect(lateral.sets.at(-1)).toMatchObject({ setType: 'burnout', targetWeight: 5 });
+  });
+
   it('carries per-machine settings and personal notes', () => {
     const pecDeck = day1.exercises.find((e) => e.exerciseId === 'ex_pec_deck')!;
     expect(pecDeck.personalSettings).toEqual([{ label: 'Position', value: '2' }]);
