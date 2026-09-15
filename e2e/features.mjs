@@ -368,6 +368,48 @@ async function main() {
     check(`${url} has readable text`, unreadable === null, unreadable ?? '');
   }
 
+  console.log('\nRUNS AS A HOME-SCREEN APP, NOT IN A BROWSER VIEW');
+  // Without `apple-mobile-web-app-capable` iOS opens the home-screen icon in a
+  // browser view and keeps the Safari toolbar on screen, which pushes the whole
+  // bottom nav ~80pt up off the edge. Next emits only the standardised
+  // `mobile-web-app-capable` from `appleWebApp.capable`, so the Apple-prefixed
+  // one is added by hand and has to stay added.
+  await page.goto(`${base}/`, { waitUntil: 'networkidle' });
+  const shell = await page.evaluate(() => {
+    const meta = (name) =>
+      document.querySelector(`meta[name="${name}"]`)?.getAttribute('content') ?? null;
+    return {
+      appleCapable: meta('apple-mobile-web-app-capable'),
+      capable: meta('mobile-web-app-capable'),
+      statusBar: meta('apple-mobile-web-app-status-bar-style'),
+      viewport: meta('viewport'),
+      manifest: document.querySelector('link[rel="manifest"]')?.getAttribute('href') ?? null,
+    };
+  });
+  check('iOS is told to run it standalone', shell.appleCapable === 'yes', String(shell.appleCapable));
+  check('the standardised flag is set too', shell.capable === 'yes', String(shell.capable));
+  check('the status bar is drawn through', shell.statusBar === 'black-translucent', String(shell.statusBar));
+  check(
+    'the viewport covers the safe areas',
+    (shell.viewport ?? '').includes('viewport-fit=cover'),
+    shell.viewport ?? '',
+  );
+  check('the manifest is linked', shell.manifest !== null, String(shell.manifest));
+
+  const manifest = await page.evaluate(async (href) => {
+    const res = await fetch(href);
+    return res.json();
+  }, shell.manifest);
+  check('the manifest asks for standalone', manifest.display === 'standalone', String(manifest.display));
+
+  // The nav must sit flush against the bottom of the viewport: anything the
+  // layout adds below it reads as the bar floating up off the edge.
+  const navGap = await page.evaluate(() => {
+    const nav = document.querySelector('nav');
+    return Math.round(window.innerHeight - nav.getBoundingClientRect().bottom);
+  });
+  check('the bottom nav is flush with the viewport edge', navGap === 0, `${navGap}px below it`);
+
   console.log('\nTHE PRIMARY BUTTON CARRIES ITS OWN COLOUR');
   await page.goto(`${base}/more/body-weight`, { waitUntil: 'networkidle' });
   await page.waitForSelector('button:has-text("ДОБАВИТЬ")');
