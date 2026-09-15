@@ -16,7 +16,10 @@ import {
   cx,
 } from '@/components/ui/primitives';
 import type { Program } from '@/domain/types';
-import { pluralize } from '@/engine/format';
+import {
+  count,
+  WORDS,
+} from '@/engine/format';
 import { programSummary } from '@/store/selectors';
 import { useStore } from '@/store/useStore';
 
@@ -44,7 +47,7 @@ export default function ProgramsPage() {
       {programs.length === 0 ? (
         <Card>
           <EmptyState
-            title="Create your first program"
+            title="Создайте первую программу"
             description="Программа — это шаблон: дни, упражнения, подходы и веса. Тренировки сохраняются отдельно."
             action={
               <LinkButton href="/programs/new" variant="primary" size="lg">
@@ -57,7 +60,7 @@ export default function ProgramsPage() {
 
       {active.length ? (
         <section>
-          <SectionTitle>Active</SectionTitle>
+          <SectionTitle>Активная</SectionTitle>
           <div className="mt-2 flex flex-col gap-2.5">
             {active.map((program) => (
               <ProgramCard key={program.id} program={program} isActive />
@@ -68,7 +71,7 @@ export default function ProgramsPage() {
 
       {drafts.length ? (
         <section className="mt-6">
-          <SectionTitle>Draft</SectionTitle>
+          <SectionTitle>Черновики</SectionTitle>
           <div className="mt-2 flex flex-col gap-2.5">
             {drafts.map((program) => (
               <ProgramCard key={program.id} program={program} />
@@ -79,7 +82,7 @@ export default function ProgramsPage() {
 
       {archived.length ? (
         <section className="mt-6">
-          <SectionTitle>Archived</SectionTitle>
+          <SectionTitle>Архив</SectionTitle>
           <div className="mt-2 flex flex-col gap-2.5">
             {archived.map((program) => (
               <ProgramCard key={program.id} program={program} />
@@ -113,7 +116,7 @@ function ProgramCard({ program, isActive }: { program: Program; isActive?: boole
         <Link href={`/programs/editor?id=${program.id}`} className="block p-4 active:bg-surface2">
           <div className="flex items-start gap-3">
             <div className="min-w-0 flex-1">
-              {isActive ? <Badge color="var(--color-accent)">Active</Badge> : null}
+              {isActive ? <Badge color="var(--color-accent)">Активная</Badge> : null}
               <p className="mt-1.5 text-[17px] leading-snug font-semibold tracking-tight">
                 {program.name}
               </p>
@@ -121,8 +124,8 @@ function ProgramCard({ program, isActive }: { program: Program; isActive?: boole
                 <p className="mt-1 truncate text-[12.5px] text-dim">{program.description}</p>
               ) : null}
               <p className="tnum mt-2 text-[12px] text-dim">
-                {pluralize(summary.days, 'day')} · {pluralize(summary.exercises, 'exercise')} ·{' '}
-                {pluralize(summary.sets, 'set')}
+                {count(summary.days, WORDS.day)} · {count(summary.exercises, WORDS.exercise)} ·{' '}
+                {count(summary.sets, WORDS.set)}
               </p>
             </div>
             <Chevron />

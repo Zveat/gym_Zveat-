@@ -19,7 +19,12 @@ import {
 } from '@/components/ui/primitives';
 import { newId } from '@/domain/ids';
 import type { Exercise, Program, ProgramExercise, WorkoutDay } from '@/domain/types';
-import { formatRepRange, formatWeight, pluralize } from '@/engine/format';
+import {
+  count,
+  formatRepRange,
+  formatWeight,
+  WORDS,
+} from '@/engine/format';
 import { daySummary, useExerciseMap, useProgram } from '@/store/selectors';
 import { useStore } from '@/store/useStore';
 
@@ -226,7 +231,7 @@ function ProgramEditor() {
               className="mt-1.5 text-[19px] font-semibold tracking-tight"
             />
             <p className="tnum mt-1 text-[12px] text-dim">
-              {pluralize(summary!.exercises, 'exercise')} · {pluralize(summary!.sets, 'set')}
+              {count(summary!.exercises, WORDS.exercise)} · {count(summary!.sets, WORDS.set)}
             </p>
 
             <div className="mt-3 flex gap-2">
@@ -410,11 +415,11 @@ function ExerciseRow({
               <span className="min-w-0 flex-1 truncate text-[14.5px] font-medium">
                 {exercise?.name ?? 'Упражнение удалено'}
               </span>
-              {!pe.isEnabled ? <Badge>Disabled</Badge> : null}
+              {!pe.isEnabled ? <Badge>Отключено</Badge> : null}
             </span>
             <span className="tnum mt-1 block text-[12px] text-dim">
               {firstSet
-                ? `${formatWeight(firstSet.targetWeight)} kg × ${formatRepRange(
+                ? `${formatWeight(firstSet.targetWeight)} кг × ${formatRepRange(
                     firstSet.targetRepsMin,
                     firstSet.targetRepsMax,
                   )} × ${working.length}`

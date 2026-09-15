@@ -103,7 +103,7 @@ export function detectPRs(
   if (baseline.maxWeight === null || set.weight > baseline.maxWeight.value) {
     found.push({
       kind: 'weight',
-      label: 'Max weight',
+      label: 'Максимальный вес',
       weight: set.weight,
       reps: set.reps,
       previous: baseline.maxWeight?.value ?? null,
@@ -112,7 +112,7 @@ export function detectPRs(
   if (baseline.maxReps === null || set.reps > baseline.maxReps.value) {
     found.push({
       kind: 'reps',
-      label: 'Max reps',
+      label: 'Максимум повторений',
       weight: set.weight,
       reps: set.reps,
       previous: baseline.maxReps?.value ?? null,
@@ -122,7 +122,7 @@ export function detectPRs(
   if (baseline.maxSetVolume === null || vol > baseline.maxSetVolume.value) {
     found.push({
       kind: 'set_volume',
-      label: 'Max set volume',
+      label: 'Лучший подход',
       weight: set.weight,
       reps: set.reps,
       previous: baseline.maxSetVolume?.value ?? null,
@@ -132,7 +132,7 @@ export function detectPRs(
   if (baseline.bestPerformance === null || e1rm > baseline.bestPerformance.value + 0.01) {
     found.push({
       kind: 'performance',
-      label: 'Best performance',
+      label: 'Лучший результат',
       weight: set.weight,
       reps: set.reps,
       previous: baseline.bestPerformance?.value ?? null,

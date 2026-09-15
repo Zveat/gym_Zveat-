@@ -100,9 +100,9 @@ export default function ActiveWorkoutPage() {
         <div className="mx-auto max-w-lg px-4 pb-3">
           <div className="tnum flex items-baseline justify-between text-[11.5px] text-dim">
             <span>
-              {progress.completedExercises} / {progress.totalExercises} exercises completed
+              Выполнено упражнений: {progress.completedExercises} из {progress.totalExercises}
             </span>
-            <span>{formatVolume(sessionVolume(session))} kg</span>
+            <span>{formatVolume(sessionVolume(session))} кг</span>
           </div>
           <ProgressBar value={progress.ratio} className="mt-1.5" />
         </div>

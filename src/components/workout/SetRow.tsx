@@ -81,7 +81,7 @@ export function SetRow({
           onClick={onUndo}
           className="shrink-0 px-1 text-[11px] font-semibold tracking-[0.08em] text-dim uppercase active:text-ink"
         >
-          Undo
+          Отменить
         </button>
       ) : null}
     </div>

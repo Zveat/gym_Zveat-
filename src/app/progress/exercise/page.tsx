@@ -25,12 +25,14 @@ import {
   type ProgressionMetric,
 } from '@/engine/analytics';
 import {
+  count,
   DIFFICULTY_META,
   formatDateShort,
   formatVolume,
   formatWeight,
   MODE_LABEL,
   MUSCLE_LABEL,
+  WORDS,
 } from '@/engine/format';
 import { exerciseFrequency, exerciseHistory, HISTORY_RANGE_LABEL, type HistoryRange } from '@/engine/history';
 import { normalizeName } from '@/engine/import-parser';
@@ -108,7 +110,7 @@ function ExerciseIndex() {
                       <p className="truncate text-[14.5px] font-medium">{row.name}</p>
                       <p className="tnum mt-1 text-[12px] text-dim">
                         {row.muscle ? `${MUSCLE_LABEL[row.muscle]} · ` : ''}
-                        {row.sessions} тренировок · {formatWeight(row.latest)} kg
+                        {count(row.sessions, WORDS.workout)} · {formatWeight(row.latest)} кг
                       </p>
                     </div>
 
@@ -142,8 +144,8 @@ function ExerciseIndex() {
       ) : (
         <Card>
           <EmptyState
-            title="No data yet"
-            description="Complete your first workout to start tracking progress."
+            title="Пока нет данных"
+            description="Проведите первую тренировку — и здесь появится прогресс."
           />
         </Card>
       )}
@@ -190,9 +192,9 @@ function SingleExercise({ exerciseId }: { exerciseId: ID }) {
       />
 
       <Card className="mt-3 p-4">
-        <Eyebrow>{metric === 'weight' ? 'Working weight' : METRIC_LABEL[metric]}</Eyebrow>
+        <Eyebrow>{metric === 'weight' ? 'Рабочий вес' : METRIC_LABEL[metric]}</Eyebrow>
         <div className="mt-2">
-          <LineTrend data={series} unit={metric === 'reps' ? 'reps' : 'kg'} height={200} />
+          <LineTrend data={series} unit={metric === 'reps' ? 'повт.' : 'кг'} height={200} />
         </div>
         {change30.percent !== null ? (
           <p className="mt-2 text-[13px]">
@@ -205,33 +207,33 @@ function SingleExercise({ exerciseId }: { exerciseId: ID }) {
               {change30.percent >= 0 ? '+' : ''}
               {Math.round(change30.percent)}%
             </span>
-            <span className="ml-2 text-dim">LAST 30 DAYS</span>
+            <span className="ml-2 text-dim">за 30 дней</span>
           </p>
         ) : null}
       </Card>
 
       {records.maxWeight ? (
         <section className="mt-6">
-          <SectionTitle>Personal records</SectionTitle>
+          <SectionTitle>Личные рекорды</SectionTitle>
           <div className="mt-2 grid grid-cols-2 gap-2.5">
             <RecordTile
-              label="Max weight"
-              value={`${formatWeight(records.maxWeight.value)} kg`}
+              label="Максимальный вес"
+              value={`${formatWeight(records.maxWeight.value)} кг`}
               hint={`× ${records.maxWeight.reps} · ${formatDateShort(records.maxWeight.date)}`}
             />
             <RecordTile
-              label="Max reps"
+              label="Максимум повторений"
               value={String(records.maxReps!.value)}
-              hint={`${formatWeight(records.maxReps!.weight)} kg · ${formatDateShort(records.maxReps!.date)}`}
+              hint={`${formatWeight(records.maxReps!.weight)} кг · ${formatDateShort(records.maxReps!.date)}`}
             />
             <RecordTile
-              label="Best set"
-              value={`${formatVolume(records.maxSetVolume!.value)} kg`}
+              label="Лучший подход"
+              value={`${formatVolume(records.maxSetVolume!.value)} кг`}
               hint={`${formatWeight(records.maxSetVolume!.weight)} × ${records.maxSetVolume!.reps}`}
             />
             <RecordTile
-              label="Best performance"
-              value={`${formatWeight(Math.round(records.bestPerformance!.value * 10) / 10)} kg`}
+              label="Лучший результат"
+              value={`${formatWeight(Math.round(records.bestPerformance!.value * 10) / 10)} кг`}
               hint={`${formatWeight(records.bestPerformance!.weight)} × ${records.bestPerformance!.reps}`}
             />
           </div>
@@ -276,7 +278,7 @@ function SingleExercise({ exerciseId }: { exerciseId: ID }) {
                         <Badge>{entry.programName}</Badge>
                       ) : null}
                       <span className="tnum text-[11.5px] text-dim">
-                        {formatVolume(entry.volume)} kg
+                        {formatVolume(entry.volume)} кг
                       </span>
                     </span>
                   </div>
@@ -304,7 +306,7 @@ function SingleExercise({ exerciseId }: { exerciseId: ID }) {
           </ul>
         ) : (
           <Card className="mt-3">
-            <EmptyState title="No data yet" description="За выбранный период данных нет." />
+            <EmptyState title="Пока нет данных" description="За выбранный период данных нет." />
           </Card>
         )}
       </section>

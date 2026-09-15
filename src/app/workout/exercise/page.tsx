@@ -178,7 +178,7 @@ function ExerciseWorkout() {
           </Link>
           <div className="min-w-0 flex-1 text-center">
             <p className="eyebrow">
-              Exercise {index + 1} / {total}
+              Упражнение {index + 1} / {total}
             </p>
           </div>
           <button
@@ -204,7 +204,7 @@ function ExerciseWorkout() {
             ) : null}
             <span className="text-faint">·</span>
             <span className="tnum">
-              {doneCount}/{entry.sets.length} sets
+              {doneCount}/{entry.sets.length} подх.
             </span>
           </div>
         </div>
@@ -225,7 +225,7 @@ function ExerciseWorkout() {
             onClick={() => setDetails('history')}
             className="flex flex-col items-start rounded-[var(--radius-tile)] border border-line bg-surface p-3.5 text-left active:bg-surface2"
           >
-            <Eyebrow>Last time</Eyebrow>
+            <Eyebrow>В прошлый раз</Eyebrow>
             {history ? (
               <>
                 <ul className="tnum mt-1.5 flex flex-col gap-0.5">
@@ -250,12 +250,12 @@ function ExerciseWorkout() {
             onClick={() => setDetails('progression')}
             className="flex flex-col items-start rounded-[var(--radius-tile)] border border-line bg-surface p-3.5 text-left active:bg-surface2"
           >
-            <Eyebrow>Personal best</Eyebrow>
+            <Eyebrow>Личный рекорд</Eyebrow>
             {records?.maxWeight ? (
               <>
                 <p className="tnum mt-1.5 text-[22px] leading-none font-semibold text-accent">
                   {formatWeight(records.maxWeight.value)}
-                  <span className="ml-1 text-[12px] font-medium text-dim">kg</span>
+                  <span className="ml-1 text-[12px] font-medium text-dim">кг</span>
                 </p>
                 <p className="tnum mt-1 text-[13px] text-dim">× {records.maxWeight.reps}</p>
                 <p className="mt-1.5 text-[11px] text-faint">
@@ -273,7 +273,7 @@ function ExerciseWorkout() {
           <Card className="p-4">
             <div className="flex items-baseline justify-between">
               <Eyebrow>
-                Set {targetSet.setNumber} of {entry.sets.length}
+                Подход {targetSet.setNumber} из {entry.sets.length}
               </Eyebrow>
               {targetSet.setType !== 'normal' ? (
                 <Badge color="var(--status-warning)">{targetSet.setType.replace('_', ' ')}</Badge>
@@ -285,14 +285,14 @@ function ExerciseWorkout() {
             ) : null}
 
             <p className="tnum mt-1 text-[12px] text-dim">
-              План: {formatWeight(targetSet.plan.weight)} kg ×{' '}
+              План: {formatWeight(targetSet.plan.weight)} кг ×{' '}
               {formatRepRange(targetSet.plan.repsMin, targetSet.plan.repsMax)}
             </p>
 
             <div className="mt-5 flex flex-col gap-5">
               <BigStepper
-                label="Weight"
-                unit="kg"
+                label="Вес"
+                unit="кг"
                 value={weight}
                 step={settings.weightStep}
                 onChange={setWeight}
@@ -302,8 +302,8 @@ function ExerciseWorkout() {
                 }}
               />
               <BigStepper
-                label="Reps"
-                unit="reps"
+                label="Повторения"
+                unit="повт."
                 value={reps}
                 step={1}
                 onChange={setReps}
@@ -332,7 +332,7 @@ function ExerciseWorkout() {
             </div>
 
             <Button variant="primary" size="xl" full className="mt-5" onClick={save}>
-              {targetSet.actual ? 'ОБНОВИТЬ ПОДХОД ✓' : 'COMPLETE SET ✓'}
+              {targetSet.actual ? 'ОБНОВИТЬ ПОДХОД ✓' : 'СОХРАНИТЬ ПОДХОД ✓'}
             </Button>
           </Card>
         ) : (

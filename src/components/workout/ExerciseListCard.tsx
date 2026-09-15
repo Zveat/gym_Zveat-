@@ -54,20 +54,20 @@ export function ExerciseListCard({
           <span className="min-w-0 flex-1 truncate text-[15px] leading-snug font-medium">
             {exercise.name}
           </span>
-          {current ? <Badge color="var(--color-accent)">Current</Badge> : null}
-          {skipped ? <Badge>Skipped</Badge> : null}
+          {current ? <Badge color="var(--color-accent)">Сейчас</Badge> : null}
+          {skipped ? <Badge>Пропущено</Badge> : null}
         </span>
 
         <span className="mt-1 flex items-center gap-2 text-[12px] text-dim">
           <span>{MUSCLE_LABEL[exercise.primaryMuscle]}</span>
           <span className="text-faint">·</span>
           <span className="tnum">
-            {done}/{total} sets
+            {done}/{total} подх.
           </span>
           {planned !== null ? (
             <>
               <span className="text-faint">·</span>
-              <span className="tnum">{formatWeight(planned)} kg</span>
+              <span className="tnum">{formatWeight(planned)} кг</span>
             </>
           ) : null}
         </span>

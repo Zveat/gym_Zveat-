@@ -86,11 +86,11 @@ function Review() {
       />
 
       <Card className="grid grid-cols-2 gap-y-5 p-5">
-        <Stat label="Duration" value={formatDuration(session.durationSeconds)} />
-        <Stat label="Working sets" value={sessionWorkingSetCount(session)} />
-        <Stat label="Volume" value={formatVolume(sessionVolume(session))} unit="kg" />
+        <Stat label="Длительность" value={formatDuration(session.durationSeconds)} />
+        <Stat label="Рабочих подходов" value={sessionWorkingSetCount(session)} />
+        <Stat label="Объём" value={formatVolume(sessionVolume(session))} unit="кг" />
         <Stat
-          label="New PRs"
+          label="Новых рекордов"
           value={prCount}
           tone={prCount > 0 ? 'accent' : 'default'}
           hint={prCount > 0 ? '🔥 Новый рекорд' : undefined}
@@ -98,7 +98,7 @@ function Review() {
       </Card>
 
       <section className="mt-7">
-        <SectionTitle>Progression review</SectionTitle>
+        <SectionTitle>Что дальше с весами</SectionTitle>
 
         {recommendations.length ? (
           <ul className="mt-2 flex flex-col gap-2.5">
@@ -113,7 +113,7 @@ function Review() {
                     <p className="text-[15px] leading-snug font-medium">{rec.exerciseName}</p>
 
                     <p className="tnum mt-2 text-[13.5px] text-dim">
-                      {rec.currentWeight !== null ? `${formatWeight(rec.currentWeight)} kg · ` : ''}
+                      {rec.currentWeight !== null ? `${formatWeight(rec.currentWeight)} кг · ` : ''}
                       {rec.performed.map((p) => p.reps).join(' · ') || '—'}
                     </p>
 
@@ -127,11 +127,11 @@ function Review() {
 
                     {canApply ? (
                       <div className="mt-3 rounded-[var(--radius-tile)] bg-surface2 px-3.5 py-3">
-                        <Eyebrow>Recommendation</Eyebrow>
+                        <Eyebrow>Рекомендация</Eyebrow>
                         <p className="tnum mt-1 text-[17px] font-semibold">
                           {rec.verdict === 'hold'
-                            ? `Оставить ${formatWeight(rec.suggestedWeight)} kg`
-                            : `Попробовать ${formatWeight(rec.suggestedWeight)} kg`}
+                            ? `Оставить ${formatWeight(rec.suggestedWeight)} кг`
+                            : `Попробовать ${formatWeight(rec.suggestedWeight)} кг`}
                         </p>
                       </div>
                     ) : null}
@@ -152,7 +152,7 @@ function Review() {
                           disabled={!canApply}
                           onClick={() => accept(rec)}
                         >
-                          ACCEPT
+                          ПРИНЯТЬ
                         </Button>
                         <Button
                           size="sm"
@@ -163,7 +163,7 @@ function Review() {
                             setEditWeight(rec.suggestedWeight ?? rec.currentWeight ?? 0);
                           }}
                         >
-                          EDIT
+                          ИЗМЕНИТЬ
                         </Button>
                         <Button
                           size="sm"
@@ -173,7 +173,7 @@ function Review() {
                             setHandled((h) => ({ ...h, [rec.exerciseEntryId]: 'ignored' }))
                           }
                         >
-                          IGNORE
+                          ОСТАВИТЬ
                         </Button>
                       </div>
                     )}
@@ -221,8 +221,8 @@ function Review() {
       >
         <div className="py-4">
           <BigStepper
-            label="Weight"
-            unit="kg"
+            label="Вес"
+            unit="кг"
             value={editWeight}
             step={0.5}
             onChange={setEditWeight}

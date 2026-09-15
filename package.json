@@ -10,7 +10,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "next build && node e2e/smoke.mjs && node e2e/features.mjs",
+    "test:e2e": "npm run build:local && node e2e/smoke.mjs && node e2e/features.mjs",
+    "build:local": "NEXT_PUBLIC_FIREBASE_API_KEY= NEXT_PUBLIC_FIREBASE_PROJECT_ID= NEXT_PUBLIC_FIREBASE_APP_ID= next build",
     "test:watch": "vitest"
   },
   "dependencies": {

@@ -22,9 +22,9 @@ export function formatDuration(seconds: number): string {
   const s = Math.max(0, Math.round(seconds));
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
-  if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`;
-  if (m > 0) return `${m}m`;
-  return `${s}s`;
+  if (h > 0) return `${h} ч ${String(m).padStart(2, '0')} мин`;
+  if (m > 0) return `${m} мин`;
+  return `${s} с`;
 }
 
 export function formatClock(seconds: number): string {
@@ -48,8 +48,16 @@ export function formatSetLine(weight: number | null, reps: number | null): strin
   return `${formatWeight(weight)} × ${reps ?? '—'}`;
 }
 
-const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-const WEEKDAYS = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+const MONTHS = ['ЯНВ', 'ФЕВ', 'МАР', 'АПР', 'МАЯ', 'ИЮН', 'ИЮЛ', 'АВГ', 'СЕН', 'ОКТ', 'НОЯ', 'ДЕК'];
+const WEEKDAYS = [
+  'ВОСКРЕСЕНЬЕ',
+  'ПОНЕДЕЛЬНИК',
+  'ВТОРНИК',
+  'СРЕДА',
+  'ЧЕТВЕРГ',
+  'ПЯТНИЦА',
+  'СУББОТА',
+];
 
 /** Parses `YYYY-MM-DD` as a *local* date (never UTC — off-by-one dates are a bug). */
 export function parseDate(date: string): Date {
@@ -59,11 +67,11 @@ export function parseDate(date: string): Date {
 
 export function formatDateShort(date: string): string {
   const d = parseDate(date);
-  return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
 }
 
 export function formatDateLong(date: Date = new Date()): string {
-  return `${WEEKDAYS[date.getDay()]}, ${MONTHS[date.getMonth()]} ${date.getDate()}`;
+  return `${WEEKDAYS[date.getDay()]}, ${date.getDate()} ${MONTHS[date.getMonth()]}`;
 }
 
 /** "Today" / "Yesterday" / "3 days ago" / "SEP 14". */
@@ -71,57 +79,88 @@ export function formatRelativeDate(date: string, today: Date = new Date()): stri
   const target = parseDate(date);
   const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const days = Math.round((start.getTime() - target.getTime()) / 86_400_000);
-  if (days === 0) return 'Today';
-  if (days === 1) return 'Yesterday';
-  if (days > 1 && days < 7) return `${days} days ago`;
+  if (days === 0) return 'Сегодня';
+  if (days === 1) return 'Вчера';
+  if (days === -1) return 'Завтра';
+  if (days > 1 && days < 7) return `${days} ${plural(days, 'день', 'дня', 'дней')} назад`;
   return formatDateShort(date);
 }
 
 export function greeting(now: Date = new Date()): string {
   const h = now.getHours();
-  if (h < 5) return 'GOOD NIGHT';
-  if (h < 12) return 'GOOD MORNING';
-  if (h < 18) return 'GOOD AFTERNOON';
-  return 'GOOD EVENING';
+  if (h < 5) return 'ДОБРОЙ НОЧИ';
+  if (h < 12) return 'ДОБРОЕ УТРО';
+  if (h < 18) return 'ДОБРЫЙ ДЕНЬ';
+  return 'ДОБРЫЙ ВЕЧЕР';
 }
 
 export const MUSCLE_LABEL: Record<MuscleGroup, string> = {
-  chest: 'Chest',
-  back: 'Back',
-  shoulders: 'Shoulders',
-  biceps: 'Biceps',
-  triceps: 'Triceps',
-  legs: 'Legs',
-  glutes: 'Glutes',
-  calves: 'Calves',
-  core: 'Core',
-  forearms: 'Forearms',
-  other: 'Other',
+  chest: 'Грудь',
+  back: 'Спина',
+  shoulders: 'Плечи',
+  biceps: 'Бицепс',
+  triceps: 'Трицепс',
+  legs: 'Ноги',
+  glutes: 'Ягодицы',
+  calves: 'Голени',
+  core: 'Корпус',
+  forearms: 'Предплечья',
+  other: 'Другое',
 };
 
 export const SET_TYPE_LABEL: Record<SetType, string> = {
-  normal: 'Working set',
-  warmup: 'Warm-up',
-  top_set: 'Top set',
-  drop_set: 'Drop set',
-  failure: 'To failure',
-  burnout: 'Burnout',
+  normal: 'Рабочий',
+  warmup: 'Разминочный',
+  top_set: 'Максимальный',
+  drop_set: 'Со сбросом веса',
+  failure: 'До отказа',
+  burnout: 'Добивочный',
 };
 
 export const DIFFICULTY_META: Record<Difficulty, { label: string; emoji: string; rpe: number; rir: number }> = {
-  easy: { label: 'EASY', emoji: '😊', rpe: 6, rir: 4 },
-  good: { label: 'GOOD', emoji: '🙂', rpe: 8, rir: 2 },
-  hard: { label: 'HARD', emoji: '😤', rpe: 9, rir: 1 },
-  failure: { label: 'FAILURE', emoji: '🔥', rpe: 10, rir: 0 },
+  easy: { label: 'ЛЕГКО', emoji: '😊', rpe: 6, rir: 4 },
+  good: { label: 'НОРМА', emoji: '🙂', rpe: 8, rir: 2 },
+  hard: { label: 'ТЯЖЕЛО', emoji: '😤', rpe: 9, rir: 1 },
+  failure: { label: 'ОТКАЗ', emoji: '🔥', rpe: 10, rir: 0 },
 };
 
 export const MODE_LABEL: Record<WorkoutMode, string> = {
-  normal: 'NORMAL',
-  light: 'LIGHT',
-  heavy: 'HEAVY',
-  recovery: 'RECOVERY',
+  normal: 'ОБЫЧНАЯ',
+  light: 'ЛЕГКАЯ',
+  heavy: 'ТЯЖЕЛАЯ',
+  recovery: 'ВОССТАНОВЛЕНИЕ',
 };
 
-export function pluralize(n: number, one: string, many = `${one}s`): string {
-  return `${n} ${n === 1 ? one : many}`;
+/**
+ * Russian needs three forms, chosen by the last digits: 1 подход, 2 подхода,
+ * 5 подходов — and 11 подходов, not 11 подход.
+ */
+export function plural(n: number, one: string, few: string, many: string): string {
+  const abs = Math.abs(Math.round(n));
+  const lastTwo = abs % 100;
+  if (lastTwo >= 11 && lastTwo <= 14) return many;
+  const last = abs % 10;
+  if (last === 1) return one;
+  if (last >= 2 && last <= 4) return few;
+  return many;
+}
+
+export function pluralize(n: number, one: string, few: string, many: string): string {
+  return `${n} ${plural(n, one, few, many)}`;
+}
+
+/** Word forms used in more than one screen. */
+export const WORDS = {
+  set: ['подход', 'подхода', 'подходов'] as const,
+  workingSet: ['рабочий подход', 'рабочих подхода', 'рабочих подходов'] as const,
+  exercise: ['упражнение', 'упражнения', 'упражнений'] as const,
+  day: ['день', 'дня', 'дней'] as const,
+  workout: ['тренировка', 'тренировки', 'тренировок'] as const,
+  rep: ['повторение', 'повторения', 'повторений'] as const,
+  record: ['рекорд', 'рекорда', 'рекордов'] as const,
+};
+
+/** `pluralize(4, ...WORDS.set)` reads badly at call sites; this does not. */
+export function count(n: number, forms: readonly [string, string, string]): string {
+  return `${n} ${plural(n, forms[0], forms[1], forms[2])}`;
 }

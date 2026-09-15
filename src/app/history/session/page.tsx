@@ -19,6 +19,7 @@ import {
 import { MODE_COLOR } from '@/domain/modes';
 import type { SessionExercise, WorkoutSession } from '@/domain/types';
 import {
+  count,
   DIFFICULTY_META,
   formatDateShort,
   formatDuration,
@@ -26,6 +27,7 @@ import {
   formatWeight,
   MODE_LABEL,
   MUSCLE_LABEL,
+  WORDS,
 } from '@/engine/format';
 import { sessionPRCount } from '@/engine/records';
 import { exerciseVolume, sessionVolume, sessionWorkingSetCount } from '@/engine/volume';
@@ -140,12 +142,12 @@ function SessionDetail() {
 
       <Card className="grid grid-cols-2 gap-y-5 p-5">
         <Stat
-          label="Duration"
+          label="Длительность"
           value={session.durationSeconds ? formatDuration(session.durationSeconds) : '—'}
         />
-        <Stat label="Working sets" value={sessionWorkingSetCount(session)} />
-        <Stat label="Volume" value={formatVolume(sessionVolume(session))} unit="kg" />
-        <Stat label="New PRs" value={prCount} tone={prCount ? 'accent' : 'default'} />
+        <Stat label="Рабочих подходов" value={sessionWorkingSetCount(session)} />
+        <Stat label="Объём" value={formatVolume(sessionVolume(session))} unit="кг" />
+        <Stat label="Новых рекордов" value={prCount} tone={prCount ? 'accent' : 'default'} />
       </Card>
 
       {session.isImported ? (
@@ -320,7 +322,7 @@ function ExerciseSummary({
       </ul>
 
       <p className="tnum mt-2 border-t border-line pt-2 text-[11.5px] text-dim">
-        {done.length} подходов · {formatVolume(exerciseVolume(exercise))} kg
+        {count(done.length, WORDS.set)} · {formatVolume(exerciseVolume(exercise))} кг
       </p>
 
       {exercise.note ? (

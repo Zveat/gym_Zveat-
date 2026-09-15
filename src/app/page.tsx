@@ -17,13 +17,14 @@ import {
 } from '@/components/ui/primitives';
 import { MODE_COLOR } from '@/domain/modes';
 import {
+  count,
   formatDateLong,
   formatDuration,
   formatRelativeDate,
   formatVolume,
   greeting,
   MODE_LABEL,
-  pluralize,
+  WORDS,
 } from '@/engine/format';
 import { overviewStats, weekWindow } from '@/engine/analytics';
 import { sessionProgress } from '@/engine/session';
@@ -103,13 +104,13 @@ export default function HomePage() {
         <SectionTitle>Эта неделя</SectionTitle>
         <Card className="mt-2 grid grid-cols-3 divide-x divide-line">
           <div className="px-4 py-4">
-            <Stat label="Workouts" value={week.workouts} />
+            <Stat label="Тренировок" value={week.workouts} />
           </div>
           <div className="px-4 py-4">
-            <Stat label="Volume" value={formatVolume(week.totalVolume)} unit="kg" />
+            <Stat label="Объём" value={formatVolume(week.totalVolume)} unit="кг" />
           </div>
           <div className="px-4 py-4">
-            <Stat label="Streak" value={streak} tone={streak > 0 ? 'accent' : 'default'} />
+            <Stat label="Серия" value={streak} tone={streak > 0 ? 'accent' : 'default'} />
           </div>
         </Card>
       </section>
@@ -143,8 +144,8 @@ export default function HomePage() {
                   {lastWorkout.durationSeconds
                     ? ` · ${formatDuration(lastWorkout.durationSeconds)}`
                     : ''}
-                  {` · ${pluralize(sessionWorkingSetCount(lastWorkout), 'set')}`}
-                  {` · ${formatVolume(sessionVolume(lastWorkout))} kg`}
+                  {` · ${count(sessionWorkingSetCount(lastWorkout), WORDS.set)}`}
+                  {` · ${formatVolume(sessionVolume(lastWorkout))} кг`}
                 </p>
               </div>
               <Chevron />
@@ -185,7 +186,7 @@ function NextWorkoutCard({
       <div className="p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <Eyebrow>Active program</Eyebrow>
+            <Eyebrow>Активная программа</Eyebrow>
             <p className="mt-1 truncate text-[15px] font-medium text-dim">{programName}</p>
           </div>
           <Link href="/programs" aria-label="Программы" className="-mr-1 -mt-1 p-1 text-dim">
@@ -194,11 +195,11 @@ function NextWorkoutCard({
         </div>
 
         <div className="mt-6">
-          <Eyebrow>Next workout</Eyebrow>
+          <Eyebrow>Следующая тренировка</Eyebrow>
           <p className="mt-1.5 text-[13px] font-semibold tracking-[0.1em] text-accent">{dayName}</p>
           <h2 className="mt-1 text-[27px] leading-[1.1] font-semibold tracking-tight">{dayTitle}</h2>
           <p className="tnum mt-2 text-[13px] text-dim">
-            {pluralize(exercises, 'exercise')} · {pluralize(sets, 'working set')}
+            {count(exercises, WORDS.exercise)} · {count(sets, WORDS.workingSet)}
           </p>
         </div>
       </div>
@@ -210,7 +211,7 @@ function NextWorkoutCard({
           size="xl"
           full
         >
-          START WORKOUT
+          НАЧАТЬ ТРЕНИРОВКУ
         </LinkButton>
       </div>
     </Card>

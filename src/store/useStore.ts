@@ -740,7 +740,7 @@ export const useStore = create<Store>((set, get) => ({
 
   importSnapshot(snapshot) {
     set({
-      settings: { ...snapshot.settings, modes: { ...DEFAULT_MODES, ...snapshot.settings.modes } },
+      settings: { ...snapshot.settings, modes: mergeModes(snapshot.settings.modes) },
       exercises: snapshot.exercises ?? [],
       programs: snapshot.programs ?? [],
       sessions: snapshot.sessions ?? [],
@@ -771,6 +771,21 @@ export const useStore = create<Store>((set, get) => ({
     await adapter.setKV(KV_SETTINGS, snapshot.settings);
   },
 }));
+
+/**
+ * Stored modes keep the user's own numbers, but never their text: `label` and
+ * `description` are interface copy, so they always come from the code. A user
+ * who signed in before the interface was translated would otherwise keep the
+ * old English wording forever.
+ */
+function mergeModes(stored?: Partial<Record<WorkoutMode, ModeConfig>>): Settings['modes'] {
+  const out = {} as Settings['modes'];
+  for (const mode of Object.keys(DEFAULT_MODES) as WorkoutMode[]) {
+    const base = DEFAULT_MODES[mode];
+    out[mode] = { ...base, ...(stored?.[mode] ?? {}), label: base.label, description: base.description };
+  }
+  return out;
+}
 
 /** Set once per page load; the auth listener drives everything after that. */
 let initStarted = false;
@@ -864,7 +879,7 @@ async function loadFrom(
     ...defaultSettings(programs.find((p) => p.status === 'active')?.id ?? null),
     ...storedSettings,
     // Mode configs gain fields over time; keep the defaults as the floor.
-    modes: { ...DEFAULT_MODES, ...(storedSettings?.modes ?? {}) },
+    modes: mergeModes(storedSettings?.modes),
   };
 
   set({

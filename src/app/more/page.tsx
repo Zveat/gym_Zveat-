@@ -2,7 +2,12 @@
 
 import { Screen, ScreenHeader } from '@/components/layout/Screen';
 import { Card, Eyebrow, Row, RowGroup, SectionTitle } from '@/components/ui/primitives';
-import { formatVolume, formatWeight, pluralize } from '@/engine/format';
+import {
+  count,
+  formatVolume,
+  formatWeight,
+  WORDS,
+} from '@/engine/format';
 import { bodyWeightStats } from '@/engine/analytics';
 import { sessionVolume } from '@/engine/volume';
 import { useActivePain, useHistory } from '@/store/selectors';
@@ -38,7 +43,7 @@ export default function MorePage() {
           <Eyebrow>Всего поднято</Eyebrow>
           <p className="tnum mt-1 text-[22px] leading-none font-semibold">
             {formatVolume(totalVolume)}
-            <span className="ml-1 text-[12px] font-medium text-dim">kg</span>
+            <span className="ml-1 text-[12px] font-medium text-dim">кг</span>
           </p>
         </div>
       </Card>
@@ -48,7 +53,7 @@ export default function MorePage() {
         <RowGroup className="mt-2">
           <Row
             label="Библиотека упражнений"
-            value={pluralize(exercises.length, 'упражнение', 'упражнений')}
+            value={count(exercises.length, WORDS.exercise)}
             href="/more/exercises"
           />
           <Row label="Импорт истории" href="/more/import" />
@@ -61,7 +66,7 @@ export default function MorePage() {
         <RowGroup className="mt-2">
           <Row
             label="Вес тела"
-            value={weight.latest ? `${formatWeight(weight.latest.weight)} kg` : '—'}
+            value={weight.latest ? `${formatWeight(weight.latest.weight)} кг` : '—'}
             href="/more/body-weight"
           />
           <Row

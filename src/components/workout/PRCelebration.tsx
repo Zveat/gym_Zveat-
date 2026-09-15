@@ -39,10 +39,10 @@ export function PRCelebrationOverlay() {
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-bold tracking-[0.16em] text-accent uppercase">
-              New PR · {pr.label}
+              Новый рекорд · {pr.label}
             </p>
             <p className="tnum mt-0.5 text-[19px] leading-none font-semibold">
-              {formatWeight(pr.weight)} kg × {pr.reps}
+              {formatWeight(pr.weight)} кг × {pr.reps}
             </p>
             <p className="mt-1 truncate text-[12px] text-dim">
               {exerciseName}

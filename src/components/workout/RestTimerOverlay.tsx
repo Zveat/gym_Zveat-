@@ -71,7 +71,7 @@ export function RestTimerOverlay() {
 
       <p className="mt-6 text-center text-[14px] leading-relaxed text-dim">
         {done ? (
-          <span className="font-semibold text-ink">READY FOR NEXT SET</span>
+          <span className="font-semibold text-ink">МОЖНО НАЧИНАТЬ</span>
         ) : (
           <>Подход {rest.setNumber} сохранён</>
         )}

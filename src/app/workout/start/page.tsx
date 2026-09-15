@@ -14,7 +14,13 @@ import {
 import { ScalePicker } from '@/components/ui/inputs';
 import { MODE_COLOR, MODE_ORDER } from '@/domain/modes';
 import type { ConditionCheckIn, WorkoutDay, WorkoutMode } from '@/domain/types';
-import { formatRepRange, formatWeight, MUSCLE_LABEL, pluralize } from '@/engine/format';
+import {
+  count,
+  formatRepRange,
+  formatWeight,
+  MUSCLE_LABEL,
+  WORDS,
+} from '@/engine/format';
 import { planExerciseSets } from '@/engine/session';
 import { daySummary, useActivePain, useActiveProgram, useExerciseMap } from '@/store/selectors';
 import { useStore } from '@/store/useStore';
@@ -199,7 +205,7 @@ function StartWorkout() {
 
       <div className="mt-8">
         <Button variant="primary" size="xl" full onClick={begin}>
-          START WORKOUT
+          НАЧАТЬ ТРЕНИРОВКУ
         </Button>
       </div>
     </Screen>
@@ -221,7 +227,7 @@ function ModePreview({ day, mode }: { day: WorkoutDay; mode: WorkoutMode }) {
           if (!sets.length) return '—';
           const working = sets.filter((s) => s.setType !== 'warmup');
           const first = working[0] ?? sets[0];
-          return `${formatWeight(first.plan.weight)} kg × ${formatRepRange(
+          return `${formatWeight(first.plan.weight)} кг × ${formatRepRange(
             first.plan.repsMin,
             first.plan.repsMax,
           )} × ${working.length}`;
@@ -244,7 +250,7 @@ function ModePreview({ day, mode }: { day: WorkoutDay; mode: WorkoutMode }) {
       <div className="flex items-baseline justify-between border-b border-line px-4 py-3">
         <Eyebrow>Что изменится</Eyebrow>
         <span className="text-[11.5px] text-dim">
-          {pluralize(changedCount, 'exercise')} из {rows.length}
+          {count(changedCount, WORDS.exercise)} из {rows.length}
         </span>
       </div>
 

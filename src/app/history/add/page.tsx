@@ -387,7 +387,7 @@ export default function AddHistoryPage() {
 
                 {exercise.sets[0] ? (
                   <p className="tnum mt-2 text-[11px] text-faint">
-                    План: {formatWeight(exercise.sets[0].plan.weight)} kg ×{' '}
+                    План: {formatWeight(exercise.sets[0].plan.weight)} кг ×{' '}
                     {formatRepRange(exercise.sets[0].plan.repsMin, exercise.sets[0].plan.repsMax)}
                   </p>
                 ) : null}

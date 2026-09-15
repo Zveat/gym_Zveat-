@@ -25,7 +25,14 @@ import {
   weeklyVolumeSeries,
   type DateWindow,
 } from '@/engine/analytics';
-import { formatDuration, formatVolume, formatWeight, MUSCLE_LABEL, pluralize } from '@/engine/format';
+import {
+  count,
+  formatDuration,
+  formatVolume,
+  formatWeight,
+  MUSCLE_LABEL,
+  WORDS,
+} from '@/engine/format';
 import { useHistory } from '@/store/selectors';
 import { useStore } from '@/store/useStore';
 
@@ -65,8 +72,8 @@ export default function ProgressPage() {
         <ScreenHeader title="Прогресс" large />
         <Card>
           <EmptyState
-            title="No data yet"
-            description="Complete your first workout to start tracking progress."
+            title="Пока нет данных"
+            description="Проведите первую тренировку — и здесь появится прогресс."
             action={
               <LinkButton href="/" variant="primary" size="lg">
                 НА ГЛАВНУЮ
@@ -93,15 +100,15 @@ export default function ProgressPage() {
       />
 
       <section className="mt-4">
-        <Eyebrow className="px-1">Overview</Eyebrow>
+        <Eyebrow className="px-1">Сводка</Eyebrow>
         <Card className="mt-2 grid grid-cols-2 gap-y-5 p-5">
-          <Stat label="Workouts" value={stats.workouts} />
-          <Stat label="Total volume" value={formatVolume(stats.totalVolume)} unit="kg" />
+          <Stat label="Тренировок" value={stats.workouts} />
+          <Stat label="Всего поднято" value={formatVolume(stats.totalVolume)} unit="кг" />
           <Stat
-            label="Avg workout"
+            label="Средняя тренировка"
             value={stats.avgDurationSeconds ? formatDuration(stats.avgDurationSeconds) : '—'}
           />
-          <Stat label="PRs" value={stats.prCount} tone={stats.prCount ? 'accent' : 'default'} />
+          <Stat label="Рекордов" value={stats.prCount} tone={stats.prCount ? 'accent' : 'default'} />
         </Card>
       </section>
 
@@ -110,10 +117,10 @@ export default function ProgressPage() {
         <Card className="mt-2 p-4">
           <div className="flex items-baseline justify-between">
             <div>
-              <Eyebrow>This week</Eyebrow>
+              <Eyebrow>Эта неделя</Eyebrow>
               <p className="tnum mt-1 text-[26px] leading-none font-semibold">
                 {formatVolume(volumeDelta.current)}
-                <span className="ml-1.5 text-[13px] font-medium text-dim">kg</span>
+                <span className="ml-1.5 text-[13px] font-medium text-dim">кг</span>
               </p>
             </div>
             {volumeDelta.percent !== null ? (
@@ -127,7 +134,7 @@ export default function ProgressPage() {
                   {volumeDelta.percent >= 0 ? '+' : ''}
                   {Math.round(volumeDelta.percent)}%
                 </p>
-                <p className="text-[10.5px] tracking-[0.08em] text-dim uppercase">vs last week</p>
+                <p className="text-[10.5px] tracking-[0.08em] text-dim uppercase">к прошлой неделе</p>
               </div>
             ) : null}
           </div>
@@ -135,7 +142,7 @@ export default function ProgressPage() {
           <div className="mt-3">
             <LineTrend
               data={volumeSeries.map((p) => ({ label: p.label, value: Math.round(p.volume) }))}
-              unit="kg"
+              unit="кг"
               height={170}
             />
           </div>
@@ -150,7 +157,7 @@ export default function ProgressPage() {
               items={muscles.map((m) => ({
                 label: MUSCLE_LABEL[m.muscle],
                 value: m.workingSets,
-                hint: `${formatVolume(m.volume)} kg`,
+                hint: `${formatVolume(m.volume)} кг`,
               }))}
             />
           ) : (
@@ -165,10 +172,10 @@ export default function ProgressPage() {
       <section className="mt-6">
         <SectionTitle>Дальше</SectionTitle>
         <RowGroup className="mt-2">
-          <Row label="Личные рекорды" value={pluralize(stats.prCount, 'PR')} href="/records" />
+          <Row label="Личные рекорды" value={count(stats.prCount, WORDS.record)} href="/records" />
           <Row
             label="Вес тела"
-            value={weight.latest ? `${formatWeight(weight.latest.weight)} kg` : '—'}
+            value={weight.latest ? `${formatWeight(weight.latest.weight)} кг` : '—'}
             href="/more/body-weight"
           />
           <Row label="Прогресс по упражнениям" href="/progress/exercise" />

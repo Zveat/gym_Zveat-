@@ -141,7 +141,7 @@ export default function BodyWeightPage() {
         <>
           <Card className="mt-6 grid grid-cols-3 divide-x divide-line">
             <div className="px-3 py-4">
-              <Stat label="Сейчас" value={formatWeight(stats.latest.weight)} unit="kg" />
+              <Stat label="Сейчас" value={formatWeight(stats.latest.weight)} unit="кг" />
             </div>
             <div className="px-3 py-4">
               <Stat
@@ -183,7 +183,7 @@ export default function BodyWeightPage() {
               />
             </div>
             <Card className="mt-2 p-4">
-              <LineTrend data={series} unit="kg" height={200} color="var(--status-info)" />
+              <LineTrend data={series} unit="кг" height={200} color="var(--status-info)" />
             </Card>
           </section>
 
@@ -202,7 +202,7 @@ export default function BodyWeightPage() {
                       {formatDateShort(log.date)}
                     </span>
                     <span className="tnum flex-1 text-[15px] font-medium">
-                      {formatWeight(log.weight)} kg
+                      {formatWeight(log.weight)} кг
                     </span>
                     {diff !== null && diff !== 0 ? (
                       <span
@@ -232,7 +232,7 @@ export default function BodyWeightPage() {
       ) : (
         <Card className="mt-6">
           <EmptyState
-            title="No data yet"
+            title="Пока нет данных"
             description="Добавьте первое измерение — дальше приложение само покажет динамику."
           />
         </Card>

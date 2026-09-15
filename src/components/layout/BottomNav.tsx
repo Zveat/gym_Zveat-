@@ -5,11 +5,11 @@ import { usePathname } from 'next/navigation';
 import { cx } from '@/components/ui/primitives';
 
 const ITEMS = [
-  { href: '/', label: 'Home', match: (p: string) => p === '/' },
-  { href: '/programs', label: 'Programs', match: (p: string) => p.startsWith('/programs') },
-  { href: '/progress', label: 'Progress', match: (p: string) => p.startsWith('/progress') || p.startsWith('/records') },
-  { href: '/history', label: 'History', match: (p: string) => p.startsWith('/history') },
-  { href: '/more', label: 'More', match: (p: string) => p.startsWith('/more') },
+  { href: '/', label: 'Home', title: 'Главная', match: (p: string) => p === '/' },
+  { href: '/programs', label: 'Programs', title: 'Программы', match: (p: string) => p.startsWith('/programs') },
+  { href: '/progress', label: 'Progress', title: 'Прогресс', match: (p: string) => p.startsWith('/progress') || p.startsWith('/records') },
+  { href: '/history', label: 'History', title: 'История', match: (p: string) => p.startsWith('/history') },
+  { href: '/more', label: 'More', title: 'Ещё', match: (p: string) => p.startsWith('/more') },
 ];
 
 function Glyph({ name, active }: { name: string; active: boolean }) {
@@ -59,7 +59,7 @@ export function BottomNav() {
               >
                 <Glyph name={item.label} active={active} />
                 <span className="text-[10px] font-medium tracking-[0.06em] uppercase">
-                  {item.label}
+                  {item.title}
                 </span>
               </Link>
             </li>

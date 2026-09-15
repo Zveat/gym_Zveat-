@@ -21,10 +21,10 @@ import { useStore } from '@/store/useStore';
 type RecordKind = 'weight' | 'reps' | 'volume' | 'performance';
 
 const KIND_LABEL: Record<RecordKind, string> = {
-  weight: 'Max weight',
-  reps: 'Max reps',
-  volume: 'Max volume',
-  performance: 'Best',
+  weight: 'Вес',
+  reps: 'Повторения',
+  volume: 'Объём',
+  performance: 'Результат',
 };
 
 /** PERSONAL RECORDS — one line per exercise, sorted by the chosen record. */
@@ -45,18 +45,18 @@ export default function RecordsPage() {
         const value =
           kind === 'weight'
             ? r.maxWeight
-              ? `${formatWeight(r.maxWeight.value)} kg × ${r.maxWeight.reps}`
+              ? `${formatWeight(r.maxWeight.value)} кг × ${r.maxWeight.reps}`
               : '—'
             : kind === 'reps'
               ? r.maxReps
-                ? `${r.maxReps.value} × ${formatWeight(r.maxReps.weight)} kg`
+                ? `${r.maxReps.value} × ${formatWeight(r.maxReps.weight)} кг`
                 : '—'
               : kind === 'volume'
                 ? r.maxSessionVolume
-                  ? `${formatVolume(r.maxSessionVolume.value)} kg`
+                  ? `${formatVolume(r.maxSessionVolume.value)} кг`
                   : '—'
                 : r.bestPerformance
-                  ? `${formatWeight(Math.round(r.bestPerformance.value * 10) / 10)} kg`
+                  ? `${formatWeight(Math.round(r.bestPerformance.value * 10) / 10)} кг`
                   : '—';
 
         const date =
@@ -133,14 +133,14 @@ export default function RecordsPage() {
           </ul>
 
           <p className="mt-4 px-1 text-[11.5px] leading-relaxed text-dim">
-            «Best» — оценка одноповторного максимума по формуле Эпли: она позволяет сравнить
+            «Результат» — оценка одноповторного максимума по формуле Эпли: она позволяет сравнить
             60×8 и 50×12. Разминочные подходы в рекорды не попадают.
           </p>
         </>
       ) : (
         <Card>
           <EmptyState
-            title="No records yet"
+            title="Рекордов пока нет"
             description="Рекорды появляются со второй тренировки упражнения — первой не с чем сравнивать."
             action={
               <LinkButton href="/" variant="primary" size="lg">

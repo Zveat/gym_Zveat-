@@ -39,7 +39,7 @@ export function LineTrend({
     return (
       <div style={{ height }} className="flex items-center justify-center">
         <EmptyState
-          title="No data yet"
+          title="Пока нет данных"
           description={
             data.length === 1
               ? 'Нужна ещё одна точка, чтобы показать динамику.'

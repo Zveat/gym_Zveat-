@@ -217,10 +217,10 @@ export function weeklyVolumeDelta(sessions: WorkoutSession[], now: Date = new Da
 export type ProgressionMetric = 'weight' | 'reps' | 'volume' | 'performance';
 
 export const METRIC_LABEL: Record<ProgressionMetric, string> = {
-  weight: 'Weight',
-  reps: 'Reps',
-  volume: 'Volume',
-  performance: 'Performance',
+  weight: 'Вес',
+  reps: 'Повторения',
+  volume: 'Объём',
+  performance: 'Результат',
 };
 
 export interface ProgressionPoint {

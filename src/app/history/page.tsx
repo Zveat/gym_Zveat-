@@ -16,12 +16,13 @@ import {
 import { MODE_COLOR, MODE_ORDER } from '@/domain/modes';
 import type { WorkoutSession } from '@/domain/types';
 import {
+  count,
   formatDuration,
   formatRelativeDate,
   formatVolume,
   MODE_LABEL,
   parseDate,
-  pluralize,
+  WORDS,
 } from '@/engine/format';
 import { sessionVolume, sessionWorkingSetCount } from '@/engine/volume';
 import { useHistory } from '@/store/selectors';
@@ -36,7 +37,7 @@ export default function HistoryPage() {
       <ScreenHeader
         title="История"
         large
-        subtitle={history.length ? pluralize(history.length, 'тренировка', 'тренировок') : undefined}
+        subtitle={history.length ? count(history.length, WORDS.workout) : undefined}
         right={
           <LinkButton href="/history/add" size="sm">
             + ВНЕСТИ
@@ -56,7 +57,7 @@ export default function HistoryPage() {
       {!history.length ? (
         <Card className="mt-4">
           <EmptyState
-            title="No history yet"
+            title="Истории пока нет"
             description="Проведите первую тренировку или внесите прошлые из заметок — приложение сразу начнёт строить прогресс."
             action={
               <LinkButton href="/more/import" variant="primary" size="lg">
@@ -102,7 +103,7 @@ function SessionList({ sessions }: { sessions: WorkoutSession[] }) {
                 {MONTH_NAMES[month - 1]} {year}
               </Eyebrow>
               <span className="tnum text-[11.5px] text-dim">
-                {group.length} · {formatVolume(volume)} kg
+                {group.length} · {formatVolume(volume)} кг
               </span>
             </div>
 
@@ -117,7 +118,7 @@ function SessionList({ sessions }: { sessions: WorkoutSession[] }) {
                           <Badge color={MODE_COLOR[session.mode]}>
                             {MODE_LABEL[session.mode]}
                           </Badge>
-                          {session.isImported ? <Badge>Импорт</Badge> : null}
+                          {session.isImported ? <Badge>Внесено вручную</Badge> : null}
                         </div>
                         <p className="mt-1 truncate text-[15px] font-medium">
                           {session.workoutDayTitle || session.programName}
@@ -127,8 +128,8 @@ function SessionList({ sessions }: { sessions: WorkoutSession[] }) {
                           {session.durationSeconds
                             ? ` · ${formatDuration(session.durationSeconds)}`
                             : ''}
-                          {` · ${sessionWorkingSetCount(session)} sets`}
-                          {` · ${formatVolume(sessionVolume(session))} kg`}
+                          {` · ${count(sessionWorkingSetCount(session), WORDS.set)}`}
+                          {` · ${formatVolume(sessionVolume(session))} кг`}
                         </p>
                       </div>
                       <Chevron />
@@ -270,7 +271,7 @@ function CalendarView({ sessions }: { sessions: WorkoutSession[] }) {
 
       <p className="tnum mt-4 px-1 text-[12px] text-dim">
         В этом месяце: {monthSessions.length} тренировок ·{' '}
-        {formatVolume(monthSessions.reduce((sum, s) => sum + sessionVolume(s), 0))} kg
+        {formatVolume(monthSessions.reduce((sum, s) => sum + sessionVolume(s), 0))} кг
       </p>
     </div>
   );

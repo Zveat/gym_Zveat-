@@ -120,7 +120,7 @@ function TechniqueTab({
       ) : null}
 
       <section>
-        <Eyebrow>Key points</Eyebrow>
+        <Eyebrow>Ключевые моменты</Eyebrow>
         {points.length ? (
           <ul className="mt-2 flex flex-col gap-2">
             {points.map((point) => (
@@ -139,7 +139,7 @@ function TechniqueTab({
 
       {personalSettings.length ? (
         <section>
-          <Eyebrow>Personal settings</Eyebrow>
+          <Eyebrow>Настройки тренажёра</Eyebrow>
           <dl className="mt-2 divide-y divide-line overflow-hidden rounded-[var(--radius-tile)] border border-line">
             {personalSettings.map((setting) => (
               <div key={setting.label} className="flex items-center justify-between px-3.5 py-2.5">
@@ -349,7 +349,7 @@ function HistoryTab({ exerciseId }: { exerciseId: ID | null }) {
                 <div className="flex items-center gap-2">
                   {entry.mode !== 'normal' ? <Badge>{MODE_LABEL[entry.mode]}</Badge> : null}
                   <span className="tnum text-[11.5px] text-dim">
-                    {formatVolume(entry.volume)} kg
+                    {formatVolume(entry.volume)} кг
                   </span>
                 </div>
               </div>
@@ -389,7 +389,7 @@ function HistoryTab({ exerciseId }: { exerciseId: ID | null }) {
         </ul>
       ) : (
         <EmptyState
-          title="No data yet"
+          title="Пока нет данных"
           description="Выполните первую тренировку, чтобы начать отслеживать прогресс."
         />
       )}
@@ -412,7 +412,7 @@ function ProgressionTab({ exerciseId }: { exerciseId: ID | null }) {
     [history, exerciseId, exercise],
   );
 
-  const unit = metric === 'reps' ? 'reps' : 'kg';
+  const unit = metric === 'reps' ? 'повт.' : 'кг';
 
   return (
     <div>
@@ -447,23 +447,23 @@ function ProgressionTab({ exerciseId }: { exerciseId: ID | null }) {
       {records?.bestPerformance ? (
         <div className="mt-5 grid grid-cols-2 gap-2.5">
           <RecordTile
-            label="Max weight"
-            value={`${formatWeight(records.maxWeight!.value)} kg`}
+            label="Максимальный вес"
+            value={`${formatWeight(records.maxWeight!.value)} кг`}
             hint={`× ${records.maxWeight!.reps} · ${formatDateShort(records.maxWeight!.date)}`}
           />
           <RecordTile
-            label="Max reps"
+            label="Максимум повторений"
             value={String(records.maxReps!.value)}
-            hint={`${formatWeight(records.maxReps!.weight)} kg · ${formatDateShort(records.maxReps!.date)}`}
+            hint={`${formatWeight(records.maxReps!.weight)} кг · ${formatDateShort(records.maxReps!.date)}`}
           />
           <RecordTile
-            label="Best set"
-            value={`${formatVolume(records.maxSetVolume!.value)} kg`}
+            label="Лучший подход"
+            value={`${formatVolume(records.maxSetVolume!.value)} кг`}
             hint={`${formatWeight(records.maxSetVolume!.weight)} × ${records.maxSetVolume!.reps}`}
           />
           <RecordTile
-            label="Best performance"
-            value={`${formatWeight(Math.round(records.bestPerformance.value * 10) / 10)} kg`}
+            label="Лучший результат"
+            value={`${formatWeight(Math.round(records.bestPerformance.value * 10) / 10)} кг`}
             hint={`${formatWeight(records.bestPerformance.weight)} × ${records.bestPerformance.reps}`}
           />
         </div>

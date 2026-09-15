@@ -26,11 +26,11 @@ export interface ExerciseHistoryEntry {
 export type HistoryRange = 'all' | '1m' | '3m' | '6m' | '1y';
 
 export const HISTORY_RANGE_LABEL: Record<HistoryRange, string> = {
-  all: 'All time',
-  '1m': '1 month',
-  '3m': '3 months',
-  '6m': '6 months',
-  '1y': '1 year',
+  all: 'Всё время',
+  '1m': 'Месяц',
+  '3m': '3 месяца',
+  '6m': 'Полгода',
+  '1y': 'Год',
 };
 
 function rangeStart(range: HistoryRange, now: Date): Date | null {
