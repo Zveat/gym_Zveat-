@@ -230,6 +230,7 @@ export const useStore = create<Store>((set, get) => ({
     set({ status: 'loading', cloud: { configured: true, account, status: 'checking' } });
 
     const adapter = new FirestoreAdapter(account.uid);
+    await migrateDeviceDataIfNeeded(adapter);
     __setAdapter(adapter);
     await loadFrom(adapter, set);
     set({ cloud: { configured: true, account, status: 'ready' } });
@@ -778,6 +779,50 @@ let watches: (() => void)[] = [];
 function stopWatches() {
   watches.forEach((off) => off());
   watches = [];
+}
+
+/**
+ * First sign-in on a device that was already used without an account.
+ *
+ * Without this, training done before connecting Firebase would sit in the
+ * device's own storage while the app showed an empty cloud account — data not
+ * lost, but invisible, which is worse. If the account is empty and the device
+ * has something, the device's database is uploaded once.
+ *
+ * Seeded-but-untouched data is uploaded too: it is identical to what the
+ * account would have been seeded with anyway.
+ */
+async function migrateDeviceDataIfNeeded(cloud: PersistenceAdapter): Promise<void> {
+  try {
+    const remote = await cloud.loadAll();
+    const cloudHasData =
+      (remote.programs?.length ?? 0) > 0 ||
+      (remote.exercises?.length ?? 0) > 0 ||
+      Boolean(remote.kv?.[KV_SETTINGS]);
+    if (cloudHasData) return;
+
+    const local = await getAdapter();
+    if (local.kind === 'firestore') return;
+    const device = await local.loadAll();
+    const deviceHasData =
+      (device.programs?.length ?? 0) > 0 || (device.exercises?.length ?? 0) > 0;
+    if (!deviceHasData) return;
+
+    await cloud.replaceAll('exercises', device.exercises ?? []);
+    await cloud.replaceAll('programs', device.programs ?? []);
+    await cloud.replaceAll('sessions', device.sessions ?? []);
+    await cloud.replaceAll('notes', device.notes ?? []);
+    await cloud.replaceAll('painLogs', device.painLogs ?? []);
+    await cloud.replaceAll('bodyWeightLogs', device.bodyWeightLogs ?? []);
+    const settings = device.kv?.[KV_SETTINGS];
+    if (settings) await cloud.setKV(KV_SETTINGS, settings);
+
+    console.info('[gym-os] данные с устройства перенесены в аккаунт');
+  } catch (error) {
+    // A failed migration must not block sign-in: the device keeps its copy,
+    // and the backup file in Settings is still there as the manual route.
+    console.error('[gym-os] не удалось перенести данные с устройства', error);
+  }
 }
 
 /**
