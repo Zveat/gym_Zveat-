@@ -3,110 +3,23 @@
  * path that matters — open, start a workout, complete sets, finish, review.
  *
  * Needs a `next build` output in ./out and Playwright available:
- *   npx next build
- *   node --experimental-default-type=module e2e/smoke.mjs
+ *   npx next build && node e2e/smoke.mjs
  *
  * Set SMOKE_BASE_URL to test against an already-running server.
  */
-import { createServer } from 'node:http';
-import { readFile, stat } from 'node:fs/promises';
-import { extname, join, normalize } from 'node:path';
-import { chromium } from 'playwright';
+import { openApp, reporter, startServer, textHelpers } from './harness.mjs';
 
-const ROOT = new URL('../out/', import.meta.url).pathname;
 const PORT = Number(process.env.SMOKE_PORT ?? 4319);
-
-const MIME = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.webmanifest': 'application/manifest+json',
-  '.png': 'image/png',
-  '.svg': 'image/svg+xml',
-  '.woff2': 'font/woff2',
-  '.txt': 'text/plain; charset=utf-8',
-};
-
-/** Static server that resolves extensionless routes to their .html file. */
-async function resolveFile(pathname) {
-  const clean = normalize(decodeURIComponent(pathname)).replace(/^(\.\.[/\\])+/, '');
-  const candidates = [
-    join(ROOT, clean),
-    join(ROOT, `${clean}.html`),
-    join(ROOT, clean, 'index.html'),
-  ];
-  for (const candidate of candidates) {
-    try {
-      const info = await stat(candidate);
-      if (info.isFile()) return candidate;
-    } catch {
-      /* try the next candidate */
-    }
-  }
-  return null;
-}
-
-function startServer() {
-  const server = createServer(async (req, res) => {
-    const url = new URL(req.url, `http://localhost:${PORT}`);
-    const file = await resolveFile(url.pathname);
-    if (!file) {
-      res.writeHead(404, { 'Content-Type': 'text/plain' });
-      res.end('not found');
-      return;
-    }
-    res.writeHead(200, { 'Content-Type': MIME[extname(file)] ?? 'application/octet-stream' });
-    res.end(await readFile(file));
-  });
-  return new Promise((resolve) => server.listen(PORT, () => resolve(server)));
-}
-
-/* ── Test harness ──────────────────────────────────────────────────── */
-
-let passed = 0;
-const failures = [];
-
-function check(label, condition, detail = '') {
-  if (condition) {
-    passed += 1;
-    console.log(`  ✓ ${label}`);
-  } else {
-    failures.push(`${label}${detail ? ` — ${detail}` : ''}`);
-    console.log(`  ✗ ${label}${detail ? ` — ${detail}` : ''}`);
-  }
-}
 
 async function main() {
   const external = process.env.SMOKE_BASE_URL;
-  const server = external ? null : await startServer();
+  const server = external ? null : await startServer(PORT);
   const base = external ?? `http://localhost:${PORT}`;
-
-  const browser = await chromium.launch({
-    executablePath: process.env.CHROMIUM_PATH || undefined,
-  });
-  const context = await browser.newContext({
-    viewport: { width: 393, height: 852 }, // iPhone 15 Pro
-    deviceScaleFactor: 3,
-    isMobile: true,
-    hasTouch: true,
-    locale: 'ru-RU',
-  });
-  const page = await context.newPage();
-
-  const consoleErrors = [];
-  page.on('console', (msg) => {
-    if (msg.type() === 'error') consoleErrors.push(msg.text());
-  });
-  page.on('pageerror', (error) => consoleErrors.push(`pageerror: ${error.message}`));
-
-  // `innerText` reflects CSS `text-transform`, so labels styled uppercase come
-  // back uppercase. Compare case-insensitively rather than guessing.
-  const text = async () => (await page.locator('body').innerText()).toUpperCase();
-  const has = (body, ...needles) => needles.every((n) => body.includes(n.toUpperCase()));
+  const { browser, context, page, consoleErrors } = await openApp(base);
+  const { text, has } = textHelpers(page);
+  const { check, finish } = reporter();
 
   console.log('\nHOME');
-  await page.goto(`${base}/`, { waitUntil: 'networkidle' });
   await page.waitForSelector('text=START WORKOUT', { timeout: 15_000 });
   let body = await text();
   check('greets the user', /GOOD (MORNING|AFTERNOON|EVENING|NIGHT), ZVEAT/.test(body), body.slice(0, 80));
@@ -283,13 +196,7 @@ async function main() {
 
   await browser.close();
   server?.close();
-
-  console.log(`\n${passed} passed, ${failures.length} failed`);
-  if (failures.length) {
-    console.log('\nFailures:');
-    failures.forEach((f) => console.log(`  - ${f}`));
-    process.exit(1);
-  }
+  finish();
 }
 
 main().catch((error) => {

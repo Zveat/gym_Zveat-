@@ -358,24 +358,26 @@ export default function AddHistoryPage() {
                         aria-label={`Вес, подход ${set.setNumber}`}
                       />
                       <span className="shrink-0 text-[13px] text-faint">×</span>
-                      <TextInput
-                        type="number"
-                        inputMode="numeric"
-                        value={set.actual?.reps ?? 0}
-                        onChange={(e) =>
-                          patchSet(exercise.id, set.id, {
-                            reps: parseInt(e.target.value, 10) || 0,
-                          })
-                        }
-                        density="compact"
-                        className="tnum w-[74px] shrink-0 text-center"
-                        aria-label={`Повторения, подход ${set.setNumber}`}
-                      />
+                      <span className="w-[72px] shrink-0">
+                        <TextInput
+                          type="number"
+                          inputMode="numeric"
+                          value={set.actual?.reps ?? 0}
+                          onChange={(e) =>
+                            patchSet(exercise.id, set.id, {
+                              reps: parseInt(e.target.value, 10) || 0,
+                            })
+                          }
+                          density="compact"
+                          className="tnum text-center"
+                          aria-label={`Повторения, подход ${set.setNumber}`}
+                        />
+                      </span>
                       <button
                         type="button"
                         onClick={() => removeSet(exercise.id, set.id)}
                         aria-label="Удалить подход"
-                        className="touch flex shrink-0 items-center justify-center text-dim active:text-pain"
+                        className="flex h-10 w-8 shrink-0 items-center justify-center text-dim active:text-pain"
                       >
                         <TrashIcon />
                       </button>
@@ -385,7 +387,7 @@ export default function AddHistoryPage() {
 
                 {exercise.sets[0] ? (
                   <p className="tnum mt-2 text-[11px] text-faint">
-                    План: {formatWeight(exercise.sets[0].plan.weight)} ×{' '}
+                    План: {formatWeight(exercise.sets[0].plan.weight)} kg ×{' '}
                     {formatRepRange(exercise.sets[0].plan.repsMin, exercise.sets[0].plan.repsMax)}
                   </p>
                 ) : null}
