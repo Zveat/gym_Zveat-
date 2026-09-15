@@ -844,11 +844,17 @@ async function loadFrom(
   if (isEmpty) {
     const snapshot = buildSeedSnapshot(nowStamp());
     set({ ...snapshot, status: 'ready', storage: adapter.kind, rest: null });
-    persist(async (a) => {
-      await a.replaceAll('exercises', snapshot.exercises);
-      await a.replaceAll('programs', snapshot.programs);
-      await a.setKV(KV_SETTINGS, snapshot.settings);
-    });
+
+    // Awaited, not fire-and-forget: the live-update subscription starts right
+    // after this, and its first snapshot would otherwise arrive before the
+    // seed had landed and replace the program with nothing.
+    try {
+      await adapter.replaceAll('exercises', snapshot.exercises);
+      await adapter.replaceAll('programs', snapshot.programs);
+      await adapter.setKV(KV_SETTINGS, snapshot.settings);
+    } catch (error) {
+      console.error('[gym-os] не удалось сохранить начальные данные', error);
+    }
     return;
   }
 
@@ -887,11 +893,22 @@ function startWatches(
   get: () => Store,
   set: (partial: Partial<StoreState>) => void,
 ) {
+  // The first snapshot of every collection merely repeats what `loadFrom` just
+  // read, so it is dropped. Acting on it is what lets a stale or still-empty
+  // read overwrite state the app has already established.
+  const primed = new Set<string>();
+  const isFirst = (name: string) => {
+    if (primed.has(name)) return false;
+    primed.add(name);
+    return true;
+  };
+
   const simple: CollectionName[] = ['exercises', 'programs', 'notes', 'painLogs', 'bodyWeightLogs'];
 
   for (const name of simple) {
     watches.push(
       adapter.watch(name, (records) => {
+        if (isFirst(name)) return;
         set({ [name]: records } as unknown as Partial<StoreState>);
       }),
     );
@@ -899,6 +916,7 @@ function startWatches(
 
   watches.push(
     adapter.watch('sessions', (records) => {
+      if (isFirst('sessions')) return;
       const remote = records as unknown as WorkoutSession[];
       const activeHere = get().sessions.find((s) => s.status === 'active');
       if (!activeHere) {
