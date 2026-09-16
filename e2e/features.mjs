@@ -130,8 +130,19 @@ async function main() {
 
   console.log('\nBODY WEIGHT');
   await page.goto(`${base}/more/body-weight`, { waitUntil: 'networkidle' });
-  await page.waitForSelector('button:has-text("ДОБАВИТЬ")');
+  // Ждём поле, а не кнопку: её подпись зависит от того, пусто ли поле
+  // («ВВЕДИТЕ ВЕС» → «ДОБАВИТЬ»), поэтому по подписи ждать нельзя.
+  await page.waitForSelector('input[placeholder="80.2"]');
+
+  // Пустое поле показывает пример «80.2», который читается как введённое
+  // значение — на это и жаловались: «ничего добавить нельзя». Кнопка обязана
+  // сама объяснять, чего ждёт.
+  const addBtn = page.locator('button:has-text("ВВЕДИТЕ ВЕС"), button:has-text("ДОБАВИТЬ")').first();
+  check('the button says what it wants while the field is empty', (await addBtn.innerText()).includes('ВВЕДИТЕ'), (await addBtn.innerText()).trim());
+  check('and it is not tappable yet', await addBtn.isDisabled());
+
   await page.fill('input[placeholder="80.2"]', '80.2');
+  check('typing a weight turns it into ДОБАВИТЬ', (await addBtn.innerText()).includes('ДОБАВИТЬ'), (await addBtn.innerText()).trim());
   await page.click('button:has-text("ДОБАВИТЬ")');
   await page.waitForTimeout(400);
   body = await text();
@@ -143,13 +154,50 @@ async function main() {
   // exactly here — the record built `notes: undefined`, the write was refused,
   // and it was gone on the next launch. Only a reload tells the truth.
   await page.reload({ waitUntil: 'networkidle' });
-  await page.waitForSelector('button:has-text("ДОБАВИТЬ")');
+  await page.waitForSelector('input[placeholder="80.2"]');
   await page.waitForTimeout(400);
   body = await text();
   check('the entry is still there after a reload', has(body, '80.2 кг'), body.slice(0, 120));
   // A refused write raises this banner, so its absence is part of the proof.
   const failed = await page.locator('text=Не сохранилось').count();
   check('nothing reported a failed write', failed === 0, `${failed} shown`);
+
+  // «Нажимаю — ничего не меняется. В чём смысл того что она есть?» Цель
+  // подкрашивала две цифры изменения, а при одном взвешивании там прочерки —
+  // то есть переключатель не влиял ни на что видимое. Теперь он даёт вердикт,
+  // и вердикт обязан меняться вместе с целью.
+  console.log('\nTHE GOAL ACTUALLY SAYS SOMETHING');
+  const goalBlock = async () =>
+    page.evaluate(() => {
+      const heading = [...document.querySelectorAll('*')].find(
+        (el) => el.textContent.trim() === 'Цель' && el.children.length === 0,
+      );
+      return heading?.closest('section')?.innerText ?? '';
+    });
+
+  await page.goto(`${base}/more/body-weight`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('text=Цель');
+  await page.waitForTimeout(300);
+  check('it says what is missing before it can judge', /нечего оценивать/i.test(await goalBlock()), (await goalBlock()).slice(0, 70));
+
+  // Второе взвешивание двумя неделями раньше: +0.8 кг за 14 дней = +0.4 кг/нед.
+  await page.fill('input[type="date"]', '2026-09-02');
+  await page.fill('input[placeholder="80.2"]', '79.4');
+  await page.click('button:has-text("ДОБАВИТЬ")');
+  await page.waitForTimeout(400);
+
+  const said = {};
+  for (const goal of ['Набор', 'Поддержание', 'Сушка']) {
+    await page.click(`button:has-text("${goal}")`);
+    await page.waitForTimeout(250);
+    said[goal] = await goalBlock();
+  }
+  check('the verdict carries the weekly rate', /кг\/нед/.test(said['Набор']), said['Набор'].slice(0, 90));
+  check(
+    'each goal reaches a different verdict on the same data',
+    new Set(Object.values(said)).size === 3,
+    Object.entries(said).map(([k, v]) => `${k}: ${v.split('\n').slice(-2, -1)}`).join(' | '),
+  );
 
   console.log('\nPAIN TRACKING');
   await page.goto(`${base}/more/pain`, { waitUntil: 'networkidle' });
@@ -530,7 +578,10 @@ async function main() {
 
   console.log('\nTHE PRIMARY BUTTON CARRIES ITS OWN COLOUR');
   await page.goto(`${base}/more/body-weight`, { waitUntil: 'networkidle' });
-  await page.waitForSelector('button:has-text("ДОБАВИТЬ")');
+  await page.waitForSelector('input[placeholder="80.2"]');
+  // Кнопка окрашена одинаково в любом состоянии, но брать надо включённую:
+  // выключенная идёт под `opacity-35` и цвет фона читался бы приглушённым.
+  await page.fill('input[placeholder="80.2"]', '84');
   const primary = await page.evaluate(() => {
     const el = [...document.querySelectorAll('button')].find((b) =>
       /ДОБАВИТЬ/i.test(b.innerText),
@@ -549,8 +600,12 @@ async function main() {
 
   // Selected state is carried by colour as well as background; when the text
   // colour silently stopped applying, every option in a row looked identical.
+  // Выбираем явно: какая цель стоит, зависит от предыдущих проверок, а смысл
+  // здесь — что ВЫБРАННАЯ читается иначе, чем невыбранные, а не какая именно.
+  await page.click('button:has-text("Набор")');
+  await page.waitForTimeout(200);
   const goalColours = await page.evaluate(() =>
-    ['Набор', 'Поддержание'].map((label) => {
+    ['Набор', 'Поддержание', 'Сушка'].map((label) => {
       const el = [...document.querySelectorAll('button')].find(
         (b) => b.innerText.trim() === label,
       );
@@ -559,7 +614,7 @@ async function main() {
   );
   check(
     'the selected goal reads differently from the others',
-    goalColours[0] !== null && goalColours[0] !== goalColours[1],
+    goalColours[0] !== null && goalColours[0] !== goalColours[1] && goalColours[1] === goalColours[2],
     goalColours.join(' vs '),
   );
 

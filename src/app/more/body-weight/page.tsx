@@ -8,6 +8,7 @@ import {
   Button,
   Card,
   EmptyState,
+  Notice,
   SectionTitle,
   SegmentedControl,
   Stat,
@@ -16,7 +17,7 @@ import {
 } from '@/components/ui/primitives';
 import { todayString } from '@/domain/ids';
 import type { BodyWeightGoal } from '@/domain/types';
-import { bodyWeightStats } from '@/engine/analytics';
+import { bodyWeightStats, bodyWeightVerdict } from '@/engine/analytics';
 import { formatDateShort, formatWeight } from '@/engine/format';
 import { useStore } from '@/store/useStore';
 
@@ -49,6 +50,9 @@ export default function BodyWeightPage() {
   const [range, setRange] = useState<Range>('month');
 
   const stats = useMemo(() => bodyWeightStats(logs), [logs]);
+  // Считается всегда, даже без данных: именно он объясняет, чего не хватает,
+  // чтобы цель начала работать. Раньше переключатель молчал при любом состоянии.
+  const verdict = useMemo(() => bodyWeightVerdict(logs, goal), [logs, goal]);
 
   const sorted = useMemo(
     () => logs.slice().sort((a, b) => b.date.localeCompare(a.date)),
@@ -111,6 +115,12 @@ export default function BodyWeightPage() {
             <TextInput type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </Field>
         </div>
+        {/*
+          Подпись меняется, а не только гаснет. Поле пустое, но в нём стоит
+          пример «80.2» — серый текст того же размера читается как уже
+          введённое значение, поэтому кнопку жали и не понимали, почему ничего
+          не происходит. Теперь она сама говорит, чего ждёт.
+        */}
         <Button
           variant="primary"
           size="lg"
@@ -119,7 +129,7 @@ export default function BodyWeightPage() {
           onClick={submit}
           disabled={!weight.trim()}
         >
-          ДОБАВИТЬ
+          {weight.trim() ? 'ДОБАВИТЬ' : 'ВВЕДИТЕ ВЕС'}
         </Button>
       </Card>
 
@@ -135,6 +145,22 @@ export default function BodyWeightPage() {
             }))}
           />
         </div>
+
+        <Notice
+          className="mt-2"
+          tone={
+            verdict.kind === 'ok'
+              ? 'accent'
+              : verdict.kind === 'not-enough'
+                ? 'info'
+                : verdict.kind === 'wrong-way'
+                  ? 'pain'
+                  : 'warn'
+          }
+          title={verdict.headline}
+        >
+          {verdict.detail}
+        </Notice>
       </section>
 
       {stats.latest ? (

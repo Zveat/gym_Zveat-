@@ -1,4 +1,5 @@
 import type {
+  BodyWeightGoal,
   BodyWeightLog,
   Exercise,
   ID,
@@ -7,6 +8,7 @@ import type {
 } from '@/domain/types';
 import { completedSessions, exerciseHistory, workoutStreak } from './history';
 import { personalRecords } from './records';
+import { WORDS, count } from './format';
 import { estimated1RM, isWorkingSet, sessionVolume, sessionWorkingSetCount, workingWeight } from './volume';
 
 /** Inclusive `[start, end]` calendar window. */
@@ -296,6 +298,162 @@ export interface BodyWeightStats {
   latest: BodyWeightLog | null;
   change7d: number | null;
   change30d: number | null;
+}
+
+/**
+ * Скорость изменения веса — кг в неделю, посчитанная по РЕАЛЬНОМУ промежутку
+ * между двумя взвешиваниями, а не по номинальным «7 дней».
+ *
+ * Это не придирка. Взвешиваются нерегулярно: если считать разницу с ближайшей
+ * записью старше недели, а она окажется месячной давности, то «+2 кг» выдадутся
+ * за недельный прирост, хотя это 0,5 кг в неделю. Вердикт на таком числе
+ * сказал бы «слишком быстро» там, где всё в норме.
+ *
+ * Берём самую старую запись внутри окна и делим на фактические дни. Меньше
+ * пяти дней — не считаем: дневные колебания воды дают ±1 кг, и на коротком
+ * промежутке это шум, а не динамика.
+ */
+export interface BodyWeightRate {
+  /** кг в неделю; отрицательное — вес падает. */
+  perWeek: number;
+  spanDays: number;
+  from: BodyWeightLog;
+  to: BodyWeightLog;
+}
+
+export const MIN_RATE_SPAN_DAYS = 5;
+
+export function bodyWeightRate(
+  logs: BodyWeightLog[],
+  now: Date = new Date(),
+  windowDays = 30,
+): BodyWeightRate | null {
+  if (logs.length < 2) return null;
+
+  const sorted = logs.slice().sort((a, b) => a.date.localeCompare(b.date));
+  const to = sorted[sorted.length - 1];
+
+  const cutoff = new Date(now);
+  cutoff.setDate(cutoff.getDate() - windowDays);
+  const earliest = iso(cutoff);
+  const from = sorted.find((l) => l.date >= earliest);
+  if (!from || from.date === to.date) return null;
+
+  const spanDays = Math.round(
+    (Date.parse(`${to.date}T00:00:00Z`) - Date.parse(`${from.date}T00:00:00Z`)) / 86_400_000,
+  );
+  if (spanDays < MIN_RATE_SPAN_DAYS) return null;
+
+  return {
+    perWeek: Math.round(((to.weight - from.weight) / spanDays) * 7 * 100) / 100,
+    spanDays,
+    from,
+    to,
+  };
+}
+
+/**
+ * Что цель означает на практике.
+ *
+ * Без этого переключатель «Набор / Поддержание / Сушка» ничего не делал:
+ * он подкрашивал две цифры изменения, а при одном взвешивании там прочерки,
+ * то есть цель не влияла ни на что видимое вообще.
+ *
+ * Границы — общепринятые ориентиры, не медицинская норма: набор быстрее
+ * ~0,6 кг в неделю идёт в основном не в мышцы, сушка быстрее ~1,2 кг в неделю
+ * забирает силу. Они здесь, чтобы приложение говорило «быстро» или «мало»
+ * числом, а не молчало.
+ */
+export interface BodyWeightBand {
+  /** Нижняя и верхняя границы разумной недельной скорости, кг. */
+  min: number;
+  max: number;
+}
+
+export const GOAL_BANDS: Record<BodyWeightGoal, BodyWeightBand> = {
+  bulk: { min: 0.2, max: 0.6 },
+  cut: { min: -1.2, max: -0.4 },
+  // Поддержание — это коридор вокруг нуля, а не направление.
+  maintain: { min: -0.3, max: 0.3 },
+};
+
+export type BodyWeightVerdictKind = 'ok' | 'fast' | 'slow' | 'wrong-way' | 'not-enough';
+
+export interface BodyWeightVerdict {
+  kind: BodyWeightVerdictKind;
+  headline: string;
+  detail: string;
+}
+
+export function bodyWeightVerdict(
+  logs: BodyWeightLog[],
+  goal: BodyWeightGoal,
+  now: Date = new Date(),
+): BodyWeightVerdict {
+  const rate = bodyWeightRate(logs, now);
+
+  if (!rate) {
+    return {
+      kind: 'not-enough',
+      headline: 'Пока нечего оценивать',
+      detail:
+        logs.length < 2
+          ? 'Нужно второе взвешивание — хотя бы через пять дней после первого. Тогда цель начнёт показывать, идёте вы по плану или нет.'
+          : `Между взвешиваниями меньше ${MIN_RATE_SPAN_DAYS} дней. На таком промежутке видна вода, а не динамика — взвесьтесь ещё раз через несколько дней.`,
+    };
+  }
+
+  const band = GOAL_BANDS[goal];
+  const perWeek = rate.perWeek;
+  const signed = `${perWeek > 0 ? '+' : ''}${perWeek.toFixed(2)} кг/нед`;
+  // Без точки на конце: дальше она добавляется по месту, и выходило «дн..».
+  const span = `за ${count(rate.spanDays, WORDS.day)}`;
+
+  if (goal === 'maintain') {
+    if (perWeek >= band.min && perWeek <= band.max) {
+      return { kind: 'ok', headline: 'Вес держится', detail: `${signed} ${span} — это и есть поддержание.` };
+    }
+    return {
+      kind: perWeek > 0 ? 'fast' : 'wrong-way',
+      headline: perWeek > 0 ? 'Вес ползёт вверх' : 'Вес ползёт вниз',
+      detail: `${signed} ${span}. Для поддержания это много: цель — остаться в пределах ±${band.max} кг в неделю.`,
+    };
+  }
+
+  const wantsUp = goal === 'bulk';
+  // Движение в обратную сторону — отдельный случай: «мало» тут неверное слово.
+  if ((wantsUp && perWeek < 0) || (!wantsUp && perWeek > 0)) {
+    return {
+      kind: 'wrong-way',
+      headline: wantsUp ? 'Вес падает, а цель — набор' : 'Вес растёт, а цель — сушка',
+      detail: `${signed} ${span}. Либо еды не хватает под ${wantsUp ? 'набор' : 'дефицит'}, либо цель пора сменить.`,
+    };
+  }
+
+  if (perWeek >= band.min && perWeek <= band.max) {
+    return {
+      kind: 'ok',
+      headline: 'Идёте по плану',
+      detail: `${signed} ${span} — в разумном коридоре ${band.min}…${band.max} кг в неделю.`,
+    };
+  }
+
+  const tooFast = wantsUp ? perWeek > band.max : perWeek < band.min;
+  if (tooFast) {
+    return {
+      kind: 'fast',
+      headline: 'Слишком быстро',
+      detail: wantsUp
+        ? `${signed} ${span}. Быстрее ${band.max} кг в неделю прибавляется в основном не мышцами.`
+        : `${signed} ${span}. Быстрее ${Math.abs(band.min)} кг в неделю сушка забирает силу — на тренировках это видно сразу.`,
+    };
+  }
+
+  return {
+    kind: 'slow',
+    headline: wantsUp ? 'Для набора мало' : 'Для сушки мало',
+    detail: `${signed} ${span}. Ожидаемо ${wantsUp ? `${band.min}…${band.max}` : `${band.min}…${band.max}`} кг в неделю — вес почти стоит.`,
+  };
 }
 
 export function bodyWeightStats(logs: BodyWeightLog[], now: Date = new Date()): BodyWeightStats {

@@ -388,11 +388,13 @@ export function Notice({
   title,
   children,
   action,
+  className,
 }: {
   tone?: 'info' | 'warn' | 'pain' | 'accent';
   title?: ReactNode;
   children?: ReactNode;
   action?: ReactNode;
+  className?: string;
 }) {
   const color = {
     info: 'var(--status-info)',
@@ -403,7 +405,7 @@ export function Notice({
 
   return (
     <div
-      className="rounded-[var(--radius-tile)] border p-3.5"
+      className={cx('rounded-[var(--radius-tile)] border p-3.5', className)}
       style={{ borderColor: `${color}40`, background: `${color}12` }}
     >
       {title ? (
