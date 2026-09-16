@@ -28,6 +28,24 @@ export function Screen({
         paddingBottom: padBottom
           ? 'calc(var(--nav-height) + var(--nav-safe-bottom) + 24px)'
           : 'calc(var(--safe-bottom) + 12px)',
+        /**
+         * Every screen is at least a *large* viewport tall, even when its
+         * content is shorter.
+         *
+         * In a Safari tab the bottom toolbar only retracts on a page that can
+         * scroll. A short screen — programs, progress, an empty history — had
+         * nothing to scroll, so the toolbar stayed out and the tab bar sat
+         * ~79pt above the screen edge, while the long screens looked right
+         * because scrolling them had already pushed the toolbar away. Same
+         * markup, different chrome.
+         *
+         * `lvh` is the viewport with the toolbar retracted, so this makes the
+         * page taller than the viewport is *while the toolbar is out* — which
+         * is exactly the scroll needed to retract it. Once it retracts the
+         * page is viewport height again and nothing scrolls. Installed to the
+         * home screen there is no toolbar and this changes nothing.
+         */
+        minHeight: '100lvh',
       }}
     >
       {children}

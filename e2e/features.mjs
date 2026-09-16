@@ -370,6 +370,29 @@ async function main() {
     check(`${url} fits the screen`, overflow === null, overflow ?? '');
   }
 
+  console.log('\nEVERY SCREEN CAN SCROLL A BROWSER TOOLBAR AWAY');
+  // Safari only retracts its bottom toolbar on a page that can scroll, so a
+  // short screen kept the toolbar out and its tab bar sat ~79pt above the
+  // screen edge while the long screens looked right. Sizing every screen to a
+  // large viewport gives the short ones exactly the scroll needed to retract
+  // it. Chromium has no such toolbar (lvh == vh), so what is checked here is
+  // the min-height that produces the behaviour, not the scroll itself.
+  for (const url of screens) {
+    await page.goto(`${base}${url}`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(200);
+    const tall = await page.evaluate(() => {
+      const main = document.querySelector('main');
+      if (!main) return { ok: false, why: 'no main' };
+      const declared = parseFloat(getComputedStyle(main).minHeight);
+      return { ok: declared >= window.innerHeight, declared, viewport: window.innerHeight };
+    });
+    check(
+      `${url} is at least a large viewport tall`,
+      tall.ok,
+      `min-height ${tall.declared}px vs viewport ${tall.viewport}px`,
+    );
+  }
+
   console.log('\nEVERY SCREEN IS READABLE');
   // A stray unlayered rule in globals.css once beat every Tailwind text-colour
   // utility, so the lime button had white text and no chip showed its selected
