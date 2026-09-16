@@ -31,6 +31,7 @@ import { lastPerformance } from '@/engine/history';
 import { personalRecords } from '@/engine/records';
 import { nextSet, suggestedInput } from '@/engine/session';
 import { useHaptics } from '@/hooks/useHaptics';
+import { useSwipe } from '@/hooks/useSwipe';
 import { useActiveSession, useExerciseNotes } from '@/store/selectors';
 import { useStore } from '@/store/useStore';
 
@@ -243,6 +244,18 @@ function ExerciseWorkout() {
     haptics('light');
   };
 
+  /**
+   * §51: свайп листает упражнения — но только как дополнение к кнопкам,
+   * которые остаются на месте. Уводить с экрана посреди подхода дороже, чем
+   * не распознать жест, поэтому пороги в `useSwipe` высокие.
+   */
+  const goTo = (target: SessionExercise | null) => {
+    if (!target) return;
+    haptics('light');
+    router.replace(`/workout/exercise?id=${target.id}`);
+  };
+  const swipe = useSwipe({ onLeft: () => goTo(following), onRight: () => goTo(previous) });
+
   /** §19: поставить то, что было в прошлую тренировку, одним тапом. */
   const repeatLast = () => {
     const done = history?.entry.sets.filter((s) => s.actual) ?? [];
@@ -312,7 +325,7 @@ function ExerciseWorkout() {
         </div>
       </header>
 
-      <Screen padBottom={false} className="pt-4">
+      <Screen padBottom={false} className="pt-4" {...swipe}>
         {/*
           КОМПАКТНО НАМЕРЕННО. Экран был 1458pt при окне 852pt: чтобы поставить
           вес, увидеть повторения и сохранить, приходилось прокручивать. В зале

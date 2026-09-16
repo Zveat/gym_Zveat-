@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import type { ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import { BackIcon, cx } from '@/components/ui/primitives';
 
 /**
@@ -15,13 +15,16 @@ export function Screen({
   className,
   /** Screens with their own fixed footer (e.g. a live workout) opt out. */
   padBottom = true,
+  /** Остальное уходит на `<main>`: экрану тренировки нужны обработчики касаний. */
+  ...rest
 }: {
   children?: ReactNode;
   className?: string;
   padBottom?: boolean;
-}) {
+} & Omit<ComponentProps<'main'>, 'className' | 'children' | 'style'>) {
   return (
     <main
+      {...rest}
       className={cx('mx-auto w-full max-w-lg px-4', className)}
       style={{
         paddingTop: 'calc(var(--safe-top) + 12px)',

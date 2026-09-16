@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExerciseListCard } from '@/components/workout/ExerciseListCard';
+import { WorkoutClockButton, WorkoutClockSheet } from '@/components/workout/WorkoutClock';
 import { ConfirmDialog, Sheet } from '@/components/ui/Sheet';
 import { TextArea } from '@/components/ui/inputs';
 import {
@@ -14,10 +15,9 @@ import {
   cx,
 } from '@/components/ui/primitives';
 import { MODE_COLOR, MODE_ORDER } from '@/domain/modes';
-import { formatClock, formatVolume, MODE_LABEL, MUSCLE_LABEL } from '@/engine/format';
-import { currentExerciseId, sessionProgress, workoutElapsedSeconds } from '@/engine/session';
+import { formatVolume, MODE_LABEL, MUSCLE_LABEL } from '@/engine/format';
+import { currentExerciseId, sessionProgress } from '@/engine/session';
 import { sessionVolume } from '@/engine/volume';
-import { useTicker } from '@/hooks/useTicker';
 import { useActiveSession } from '@/store/selectors';
 import { useStore } from '@/store/useStore';
 
@@ -32,14 +32,10 @@ export default function ActiveWorkoutPage() {
   const addExercise = useStore((s) => s.addExerciseToWorkout);
   const setSessionNotes = useStore((s) => s.setSessionNotes);
   const finishWorkout = useStore((s) => s.finishWorkout);
-  const pauseWorkoutClock = useStore((s) => s.pauseWorkoutClock);
-  const resumeWorkoutClock = useStore((s) => s.resumeWorkoutClock);
-  const resetWorkoutClock = useStore((s) => s.resetWorkoutClock);
   const changeWorkoutMode = useStore((s) => s.changeWorkoutMode);
   const settings = useStore((s) => s.settings);
   const discardWorkout = useStore((s) => s.discardWorkout);
 
-  const now = useTicker(session !== null);
   const [showFinish, setShowFinish] = useState(false);
   const [showDiscard, setShowDiscard] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
@@ -80,8 +76,6 @@ export default function ActiveWorkoutPage() {
     );
   }
 
-  const elapsed = workoutElapsedSeconds(session, now);
-  const paused = Boolean(session.clockPausedAt);
   const finish = () => {
     const id = finishWorkout();
     router.replace(id ? `/workout/review?id=${id}` : '/');
@@ -122,22 +116,7 @@ export default function ActiveWorkoutPage() {
             </p>
           </div>
 
-          {/*
-            Таймер — кнопка, а не подпись: пауза и завершение нужны прямо
-            отсюда, а отдельный экран ради этого открывать в зале незачем.
-          */}
-          <button
-            type="button"
-            onClick={() => setShowClock(true)}
-            aria-label="Часы тренировки"
-            className={cx(
-              'tnum touch shrink-0 rounded-xl px-2 text-[17px] font-semibold tracking-tight active:bg-surface2',
-              paused && 'text-warn',
-            )}
-          >
-            {formatClock(elapsed)}
-            {paused ? <span className="ml-1 text-[11px]">пауза</span> : null}
-          </button>
+          <WorkoutClockButton session={session} onOpen={() => setShowClock(true)} />
         </div>
 
         <div className="mx-auto max-w-lg px-4 pb-3">
@@ -232,66 +211,15 @@ export default function ActiveWorkoutPage() {
       </Sheet>
 
       {/* Управление часами: маленький шит, а не отдельный экран (§Таймер). */}
-      <Sheet open={showClock} onClose={() => setShowClock(false)} title="Часы тренировки">
-        <p className="tnum text-center text-[44px] leading-none font-semibold tracking-[-0.03em]">
-          {formatClock(elapsed)}
-        </p>
-        <p className="mt-1.5 text-center text-[12.5px] text-dim">
-          {paused ? 'Часы на паузе. Подходы сохраняются как обычно.' : 'Часы идут.'}
-        </p>
-
-        <div className="mt-5 flex flex-col gap-2">
-          {paused ? (
-            <Button
-              variant="primary"
-              size="lg"
-              full
-              onClick={() => {
-                resumeWorkoutClock();
-                setShowClock(false);
-              }}
-            >
-              ПРОДОЛЖИТЬ
-            </Button>
-          ) : (
-            <Button
-              size="lg"
-              full
-              onClick={() => {
-                pauseWorkoutClock();
-                setShowClock(false);
-              }}
-            >
-              ПАУЗА
-            </Button>
-          )}
-          <Button
-            size="md"
-            variant="ghost"
-            full
-            onClick={() => {
-              resetWorkoutClock();
-              setShowClock(false);
-            }}
-          >
-            ОБНУЛИТЬ ЧАСЫ
-          </Button>
-          <Button
-            size="md"
-            variant="danger"
-            full
-            onClick={() => {
-              setShowClock(false);
-              setShowFinish(true);
-            }}
-          >
-            ЗАВЕРШИТЬ ТРЕНИРОВКУ
-          </Button>
-        </div>
-        <p className="mt-3 px-1 text-[11.5px] leading-relaxed text-dim">
-          «Обнулить» трогает только секундомер — подходы, веса и история остаются на месте.
-        </p>
-      </Sheet>
+      <WorkoutClockSheet
+        session={session}
+        open={showClock}
+        onClose={() => setShowClock(false)}
+        onFinish={() => {
+          setShowClock(false);
+          setShowFinish(true);
+        }}
+      />
 
       <Sheet open={showAdd} onClose={() => setShowAdd(false)} title="Добавить упражнение">
         <ul className="flex flex-col gap-1.5 pb-2">

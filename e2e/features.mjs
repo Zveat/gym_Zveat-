@@ -190,6 +190,35 @@ async function main() {
   check('the recorded set survives a mode change', has(body, '52.5'), body.slice(0, 220));
   check('the pending set picks up the lighter plan', has(body, '42.5'), body.slice(0, 220));
 
+  // §47: на экране тренировки часы тикают раз в секунду. Пока тикер стоял в
+  // компоненте экрана, каждую секунду перерисовывались все карточки
+  // упражнений — замер показывал 20 перерисовок за 4 секунды простоя. Часы
+  // вынесены в свой компонент; здесь проверяется, что за секунду простоя
+  // меняется ровно одно место в DOM, а не дерево.
+  console.log('\nIDLE COSTS ALMOST NOTHING');
+  await page.goto(`${base}/workout`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('button[aria-label="Часы тренировки"]');
+  const churn = await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        let nodes = new Set();
+        const observer = new MutationObserver((records) => {
+          for (const record of records) nodes.add(record.target);
+        });
+        observer.observe(document.body, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+          attributes: true,
+        });
+        setTimeout(() => {
+          observer.disconnect();
+          resolve(nodes.size);
+        }, 2200);
+      }),
+  );
+  check('idle only touches the clock', churn <= 2, `${churn} узлов изменилось`);
+
   // Убираем за собой: незавершённая тренировка меняет главный экран
   // («ПРОДОЛЖИТЬ» вместо «НАЧАТЬ»), и следующие разделы падали бы на этом.
   await page.goto(`${base}/workout`, { waitUntil: 'networkidle' });
