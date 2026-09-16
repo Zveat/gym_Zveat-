@@ -148,6 +148,17 @@ export default function HomePage() {
             <Stat label="Серия" value={streak} tone={streak > 0 ? 'accent' : 'default'} />
           </div>
         </Card>
+        {/*
+          «Серия 21» без объяснения — просто число. Три дня отдыха внутри
+          серии не считаются пропуском осознанно: это перерыв, который люди и
+          берут, а серия, обрывающаяся от одного выходного, никого не
+          мотивирует.
+        */}
+        {streak > 0 ? (
+          <p className="mt-2 px-1 text-[11.5px] leading-relaxed text-dim">
+            Серия — {count(streak, WORDS.workout)} подряд без перерыва больше трёх дней.
+          </p>
+        ) : null}
       </section>
 
       <section className="mt-6">
