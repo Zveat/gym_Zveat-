@@ -9,8 +9,10 @@ import { buildSeedProgram } from './program-mass-split';
  * `migrations.ts`, а запускается он по этому номеру.
  *
  * 2 — разминка и заминка у дня.
+ * 3 — цель по тренировкам: отсчёт с первой тренировки истории вместо
+ *     сегодняшней даты, которую подставила версия 2.
  */
-export const SEED_VERSION = 2;
+export const SEED_VERSION = 3;
 
 export function defaultSettings(activeProgramId: string | null): Settings {
   return {

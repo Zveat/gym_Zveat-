@@ -91,9 +91,35 @@ export function initialWorkoutGoal(): WorkoutCountGoal {
 }
 
 /**
+ * Отпечаток цели, которую поставила ПРОШЛАЯ сборка.
+ *
+ * Та версия не знала даты первой тренировки и подставляла сегодняшнюю вместе
+ * с baseline 25 — на экране это выходило «день 1 из 150» и «опережение 24».
+ * Цель уже лежит в базе, поэтому шаг «ставим, если цели нет» её не догонит:
+ * цель-то есть. Узнаём именно автоматическую по её приметам — 100 за 150,
+ * baseline 25, отсчёт и зачёт с одной и той же даты, и эта дата не та, что
+ * назвал владелец. Правку руками такой набор не воспроизводит.
+ */
+export function isStaleAutoGoal(goal: WorkoutCountGoal): boolean {
+  return (
+    goal.target === 100 &&
+    goal.days === 150 &&
+    goal.baseline === 25 &&
+    goal.startDate === goal.countFrom &&
+    goal.startDate !== OWNER_GOAL_START
+  );
+}
+
+/**
+ * Что сделать с целью на запуске. `null` — не трогать.
+ *
  * `undefined` и `null` — разные вещи: `undefined` значит «цели никогда не
  * было», `null` — «владелец её убрал». Убранную не возвращаем.
  */
-export function needsWorkoutGoal(current: WorkoutCountGoal | null | undefined): boolean {
-  return current === undefined;
+export function repairWorkoutGoal(
+  current: WorkoutCountGoal | null | undefined,
+): WorkoutCountGoal | null {
+  if (current === undefined) return initialWorkoutGoal();
+  if (current === null) return null;
+  return isStaleAutoGoal(current) ? initialWorkoutGoal() : null;
 }

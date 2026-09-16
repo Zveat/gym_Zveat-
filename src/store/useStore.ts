@@ -4,11 +4,7 @@ import { create } from 'zustand';
 import { newId, nowStamp, todayString } from '@/domain/ids';
 import { DEFAULT_MODES } from '@/domain/modes';
 import { buildSeedSnapshot, defaultSettings, SEED_VERSION } from '@/domain/seed';
-import {
-  backfillCardio,
-  initialWorkoutGoal,
-  needsWorkoutGoal,
-} from '@/domain/seed/migrations';
+import { backfillCardio, repairWorkoutGoal } from '@/domain/seed/migrations';
 import type {
   BodyWeightLog,
   ConditionCheckIn,
@@ -1100,11 +1096,11 @@ async function loadFrom(
       programs = programs.map((p) => byId.get(p.id) ?? p);
     }
 
+    const goal = repairWorkoutGoal(storedSettings?.workoutGoal);
+
     storedSettings = {
       ...storedSettings,
-      ...(needsWorkoutGoal(storedSettings?.workoutGoal)
-        ? { workoutGoal: initialWorkoutGoal() }
-        : {}),
+      ...(goal ? { workoutGoal: goal } : {}),
       seedVersion: SEED_VERSION,
     } as Settings;
 

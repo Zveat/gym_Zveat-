@@ -6,7 +6,8 @@ import {
   defaultWarmup,
   initialWorkoutGoal,
   isLegsDay,
-  needsWorkoutGoal,
+  isStaleAutoGoal,
+  repairWorkoutGoal,
   WARMUP_DEFAULT,
 } from './migrations';
 
@@ -116,10 +117,50 @@ describe('цель по тренировкам', () => {
     expect(goal.countFrom).toBe(goal.startDate);
   });
 
-  it('ставится только когда цели никогда не было', () => {
-    expect(needsWorkoutGoal(undefined)).toBe(true);
-    // Убранную владельцем цель не возвращаем.
-    expect(needsWorkoutGoal(null)).toBe(false);
-    expect(needsWorkoutGoal(initialWorkoutGoal())).toBe(false);
+  it('ставит цель, когда её никогда не было', () => {
+    expect(repairWorkoutGoal(undefined)).toEqual(initialWorkoutGoal());
+  });
+
+  it('не возвращает цель, которую владелец убрал', () => {
+    expect(repairWorkoutGoal(null)).toBeNull();
+  });
+
+  it('не трогает цель, которую уже поправили', () => {
+    expect(repairWorkoutGoal(initialWorkoutGoal())).toBeNull();
+  });
+});
+
+describe('цель из прошлой сборки', () => {
+  /** Ровно то, что записала версия 2: сегодняшняя дата и baseline 25. */
+  const stale = {
+    target: 100,
+    days: 150,
+    startDate: '2026-09-16',
+    baseline: 25,
+    countFrom: '2026-09-16',
+  };
+
+  it('узнаётся по приметам и заменяется на правильную', () => {
+    expect(isStaleAutoGoal(stale)).toBe(true);
+    expect(repairWorkoutGoal(stale)).toEqual(initialWorkoutGoal());
+  });
+
+  it('не принимает за неё правку владельца', () => {
+    // Любая из примет не сходится — значит цель трогали руками.
+    expect(isStaleAutoGoal({ ...stale, baseline: 1 })).toBe(false);
+    expect(isStaleAutoGoal({ ...stale, target: 120 })).toBe(false);
+    expect(isStaleAutoGoal({ ...stale, days: 100 })).toBe(false);
+    expect(isStaleAutoGoal({ ...stale, countFrom: '2026-08-20' })).toBe(false);
+  });
+
+  it('не переписывает уже исправленную цель по второму разу', () => {
+    expect(isStaleAutoGoal(initialWorkoutGoal())).toBe(false);
+  });
+
+  it('узнаётся при любой дате, которую могла подставить прошлая сборка', () => {
+    // Дата там была «сегодня на момент первого запуска» — какой угодно.
+    for (const date of ['2026-09-16', '2026-09-20', '2026-10-01']) {
+      expect(isStaleAutoGoal({ ...stale, startDate: date, countFrom: date })).toBe(true);
+    }
   });
 });
