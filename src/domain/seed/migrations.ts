@@ -68,20 +68,32 @@ export function backfillCardio(program: Program): Program | null {
 }
 
 /**
- * Цель, которую владелец вёл в другом приложении: 100 тренировок за 150 дней,
- * 25 из них уже сделаны.
+ * Цель, которую владелец вёл в другом приложении: 100 тренировок за 150 дней.
  *
- * Дату начала отсчёта здесь взять неоткуда — в старом приложении её не было,
- * а угаданная дата врала бы про «день X из 150» и про отставание. Поэтому
- * ставим сегодняшнюю и просим проверить на самой карточке.
+ * Считается целиком из истории, поэтому `baseline` здесь ноль, а отсчёт идёт
+ * с первой тренировки в его выгрузке — 07.08.2026. Так цифру можно проверить:
+ * она совпадает с числом тренировок в истории, а не с числом нажатий.
  *
+ * В выгрузке 24 тренировки, а старый счётчик показывал 25. Одной в файле нет,
+ * и угадывать её здесь нельзя: если она была, владелец либо внесёт её в
+ * историю, либо поставит «уже сделано до приложения» = 1.
+ */
+export const OWNER_GOAL_START = '2026-08-07';
+
+export function initialWorkoutGoal(): WorkoutCountGoal {
+  return {
+    target: 100,
+    days: 150,
+    startDate: OWNER_GOAL_START,
+    baseline: 0,
+    countFrom: OWNER_GOAL_START,
+  };
+}
+
+/**
  * `undefined` и `null` — разные вещи: `undefined` значит «цели никогда не
  * было», `null` — «владелец её убрал». Убранную не возвращаем.
  */
-export function initialWorkoutGoal(today: string): WorkoutCountGoal {
-  return { target: 100, days: 150, startDate: today, baseline: 25, countFrom: today };
-}
-
 export function needsWorkoutGoal(current: WorkoutCountGoal | null | undefined): boolean {
   return current === undefined;
 }

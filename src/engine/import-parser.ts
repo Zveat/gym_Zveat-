@@ -74,9 +74,42 @@ export function scoreMatch(raw: string, candidate: string): number {
   const tb = tokens(candidate);
   if (!ta.length || !tb.length) return 0;
 
+  /*
+   * Совпадение по префиксу — только между ДЛИННЫМИ токенами, и каждый токен
+   * кандидата расходуется один раз.
+   *
+   * Иначе «рукоятью» цеплялось за «рук» (проверка длины стояла только на
+   * стороне запроса), и «Разгибание рук на блоке с прямой рукоятью»
+   * совпадало с «...с прямой канатом» на единицу — то есть 34 подхода
+   * прямой рукояти по 45–55 кг легли бы в рекорды канатной рукояти. Точное
+   * совпадение имеет приоритет над префиксным, чтобы порядок библиотеки не
+   * решал исход.
+   */
+  const LONG = 3;
+  const used = new Set<number>();
   let hits = 0;
   for (const t of ta) {
-    if (tb.some((x) => x === t || (t.length > 3 && (x.startsWith(t) || t.startsWith(x))))) hits += 1;
+    let found = -1;
+    for (let i = 0; i < tb.length; i += 1) {
+      if (used.has(i)) continue;
+      const x = tb[i];
+      if (x === t) {
+        found = i;
+        break;
+      }
+      if (
+        found < 0 &&
+        t.length > LONG &&
+        x.length > LONG &&
+        (x.startsWith(t) || t.startsWith(x))
+      ) {
+        found = i;
+      }
+    }
+    if (found >= 0) {
+      used.add(found);
+      hits += 1;
+    }
   }
   const overlap = hits / Math.max(ta.length, tb.length);
   const substring = b.includes(a) || a.includes(b) ? 0.25 : 0;
@@ -100,6 +133,20 @@ export function matchExercise(
     return { exerciseId: null, matchedName: null, score: best?.score ?? 0 };
   }
   return { exerciseId: best.exercise.id, matchedName: best.exercise.name, score: best.score };
+}
+
+/**
+ * «День 1 - Грудь + Трицепс» → короткая метка и то, что тренируется.
+ *
+ * В выгрузке владельца день назван одной строкой, и без разделения в истории
+ * выходило «День 1 - Грудь + Трицепс» дважды: и в метке, и в заголовке.
+ * Разделитель — любое тире, окружённое пробелами; без него строка целиком
+ * идёт в метку, как и было.
+ */
+export function splitDayName(raw: string): { name: string; title: string } {
+  const match = raw.match(/^(.*?)\s+[-–—]\s+(.*)$/);
+  if (!match) return { name: raw.trim(), title: '' };
+  return { name: match[1].trim(), title: match[2].trim() };
 }
 
 /* ── Dates ─────────────────────────────────────────────────────────── */

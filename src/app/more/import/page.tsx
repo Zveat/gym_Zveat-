@@ -34,6 +34,9 @@ Incline Dumbbell Press
 16 x 12
 18 x 10`;
 
+/** Выгрузка владельца, положенная в приложение (см. `loadOwnExport`). */
+const OWN_EXPORT = '/data/history-zveat.csv';
+
 const CSV_EXAMPLE = `Date,Program,Workout,Exercise,Set,Weight,Reps
 2026-08-01,Mass,Day 1,Жим штанги лежа,1,50,12
 2026-08-01,Mass,Day 1,Жим штанги лежа,2,50,12`;
@@ -60,7 +63,11 @@ export default function ImportPage() {
   const [preview, setPreview] = useState<ParsedWorkout[] | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [programId, setProgramId] = useState<string>(activeProgramId ?? '');
-  const [result, setResult] = useState<{ created: number; skipped: number } | null>(null);
+  const [result, setResult] = useState<{
+    created: number;
+    skipped: number;
+    duplicates: number;
+  } | null>(null);
 
   /**
    * A file is just another way to get the same text: .xlsx is unpacked to CSV
@@ -90,6 +97,34 @@ export default function ImportPage() {
       setFileError(
         e instanceof XlsxError ? e.message : 'Не удалось прочитать файл. Попробуйте CSV.',
       );
+    }
+  };
+
+  /**
+   * ГОТОВАЯ ВЫГРУЗКА ВЛАДЕЛЬЦА — один тап вместо файла.
+   *
+   * Файл лежит в приложении (`public/data/history-zveat.csv`, ровно те 516
+   * строк из его Excel, без пустого хвоста), и названия упражнений в нём уже
+   * сверены с библиотекой — все 26 совпадают точно. Разбор идёт тем же путём,
+   * что и любой файл, и так же заканчивается предпросмотром: своя история
+   * тоже проверяется перед записью.
+   */
+  const loadOwnExport = async () => {
+    setFileError(null);
+    try {
+      const response = await fetch(`${OWN_EXPORT}?v=${process.env.NEXT_PUBLIC_BUILD_ID ?? ''}`);
+      if (!response.ok) throw new Error(String(response.status));
+      const text = await response.text();
+      setRaw(text);
+      setSource('csv');
+      setLoadedFile('history-zveat.csv');
+      // Разбираем сразу из текста: `raw` в этом тике ещё старый.
+      const parsed = parseWorkoutCsv(text, exercises);
+      setPreview(parsed.workouts);
+      setWarnings(parsed.warnings);
+      setResult(null);
+    } catch {
+      setFileError('Не удалось загрузить готовую выгрузку. Выберите файл вручную.');
     }
   };
 
@@ -161,9 +196,20 @@ export default function ImportPage() {
       <Screen>
         <ScreenHeader title="Импорт завершён" back="/more" />
         <Notice tone="accent" title={`✓ Добавлено тренировок: ${result.created}`}>
+          {/*
+            «Уже были» и «пропущено» — разные вещи, и их нельзя складывать:
+            первое значит «эта дата в истории есть, повторно не писали»,
+            второе — «не смогли разобрать». Иначе повторный импорт выглядел бы
+            как потеря данных.
+          */}
+          {result.duplicates
+            ? `Уже были в истории и не добавлены повторно: ${result.duplicates}. `
+            : ''}
           {result.skipped
             ? `Пропущено: ${result.skipped} (без даты или без распознанных упражнений).`
-            : 'Всё разобрано без потерь.'}
+            : result.duplicates
+              ? 'Остальное разобрано без потерь.'
+              : 'Всё разобрано без потерь.'}
         </Notice>
         <div className="mt-5 flex flex-col gap-2">
           <LinkButton href="/history" size="lg" full>
@@ -202,6 +248,30 @@ export default function ImportPage() {
               { value: 'csv', label: 'CSV' },
             ]}
           />
+
+          {/*
+            Своя история — первым делом: это то, ради чего экран открывают
+            сейчас. Ручной файл остаётся ниже и работает как раньше.
+          */}
+          <Card className="mt-3 p-4">
+            <Eyebrow>Моя выгрузка</Eyebrow>
+            <p className="mt-1 text-[14.5px] leading-snug font-semibold">
+              24 тренировки, 516 подходов
+            </p>
+            <p className="mt-1 text-[11.5px] leading-relaxed text-dim">
+              07.08.2026 — 15.09.2026. Все 26 названий сверены с библиотекой. Даты, которые уже
+              есть в истории, повторно не добавятся.
+            </p>
+            <Button
+              variant="primary"
+              size="md"
+              full
+              className="mt-3"
+              onClick={() => void loadOwnExport()}
+            >
+              ВЗЯТЬ МОЮ ВЫГРУЗКУ
+            </Button>
+          </Card>
 
           <Card className="mt-3 p-4">
             <Eyebrow>Файл</Eyebrow>

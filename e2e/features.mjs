@@ -500,10 +500,12 @@ async function main() {
   await page.waitForSelector('text=Загружен:');
   body = await text();
   check('loads an xlsx file', has(body, 'history.xlsx'));
-  await page.click('button:has-text("РАЗОБРАТЬ")');
+  await page.click('button:text-is("РАЗОБРАТЬ")');
   await page.waitForSelector('text=Предпросмотр');
   body = await text();
   check('reads the excel rows', has(body, 'Жим штанги лежа', '50×12'));
+  // Точная подпись, а не подстрока: на этом экране есть вторая кнопка, и
+  // `has-text("РАЗОБРАТЬ")` цеплялась за неё, подставляя другие данные.
   // The parsed date lands in a date input, whose value is not page text.
   const parsedDate = await page.locator('input[type="date"]').first().inputValue();
   check('converts the excel date serial 46235 to 2026-08-01', parsedDate === '2026-08-01', parsedDate);
@@ -896,6 +898,113 @@ async function main() {
   check('/progress with a goal fits the screen', goalOverflow === null, goalOverflow ?? '');
   const goalUnreadable = await assertReadableText(page);
   check('/progress with a goal stays readable', goalUnreadable === null, goalUnreadable ?? '');
+
+  console.log('\nПЕРЕНОС МОЕЙ ИСТОРИИ ОДНИМ ТАПОМ');
+  /*
+   * Настоящая выгрузка владельца: 24 тренировки, 516 подходов, 26 названий.
+   * Проверяется именно то, что тут может молча сломаться: все подходы дошли,
+   * веса не потерялись, ни одно упражнение не осталось нераспознанным, и
+   * повторный тап не удваивает историю.
+   */
+  await page.setViewportSize(VIEWPORTS.pro);
+  await page.goto(`${base}/more/import`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('text=Моя выгрузка');
+  body = await text();
+  check('the bundled export is offered up front', has(body, '24 тренировки, 516 подходов'), '');
+
+  await page.click('button:text-is("ВЗЯТЬ МОЮ ВЫГРУЗКУ")');
+  await page.waitForSelector('text=Предпросмотр', { timeout: 15_000 });
+  const parsed = await page.evaluate(() => {
+    const el = [...document.querySelectorAll('*')].find(
+      (n) => /Тренировок/.test(n.textContent ?? '') && n.children.length === 0,
+    );
+    return el?.closest('div[class*="grid"], section, div')?.innerText ?? '';
+  });
+  body = await text();
+  check(
+    'the preview counts 24 workouts and 516 sets',
+    /\b24\b/.test(body) && /\b516\b/.test(body),
+    parsed.slice(0, 120),
+  );
+  check('nothing is left unmatched', /НЕ НАЙДЕНО\s*0|БЕЗ ПАРЫ\s*0|0\s*БЕЗ/.test(body) || !has(body, 'СОЗДАТЬ УПРАЖНЕНИЕ'), '');
+
+  await page.click('button:text-is("ИМПОРТИРОВАТЬ")');
+  await page.waitForSelector('text=Импорт завершён', { timeout: 20_000 });
+  body = await text();
+  /*
+   * 23, а не 24: раздел «MANUAL HISTORY ENTRY» выше уже записал тренировку на
+   * 01.09.2026 — это одна из дат выгрузки, и защита от повтора её отбила.
+   * Проверяем именно так, а не «created + duplicates = 24»: нестрогая
+   * проверка прошла бы и при настоящей потере тренировок.
+   */
+  check(
+    'every workout from the file lands once — 23 new, 01.09 already there',
+    has(body, 'Добавлено тренировок: 23') && has(body, 'не добавлены повторно: 1'),
+    body.slice(0, 200),
+  );
+
+  // Второй тап по тому же файлу — самый дорогой способ испортить историю.
+  await page.click('button:has-text("ИМПОРТИРОВАТЬ ЕЩЁ")');
+  await page.waitForSelector('text=Моя выгрузка');
+  await page.click('button:text-is("ВЗЯТЬ МОЮ ВЫГРУЗКУ")');
+  await page.waitForSelector('text=Предпросмотр', { timeout: 15_000 });
+  await page.click('button:text-is("ИМПОРТИРОВАТЬ")');
+  await page.waitForSelector('text=Импорт завершён', { timeout: 20_000 });
+  body = await text();
+  check(
+    'a second run adds nothing and says why',
+    has(body, 'Добавлено тренировок: 0') && has(body, 'Уже были в истории'),
+    body.slice(0, 200),
+  );
+
+  // Теперь то, что реально важно: цифры в истории и в прогрессе.
+  await page.goto(`${base}/history`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('a[href^="/history/session"]');
+  const historyCount = await page.locator('a[href^="/history/session"]').count();
+  check('history lists every imported workout', historyCount >= 24, `${historyCount} shown`);
+  body = await text();
+  check(
+    'the day label and what it trains are separate, not one glued string',
+    has(body, 'ДЕНЬ 1') && has(body, 'ГРУДЬ + ТРИЦЕПС') && !has(body, 'ДЕНЬ 1 - ГРУДЬ'),
+    '',
+  );
+
+  // Веса — то, что уже терялось молча: колонка называется «Вес, кг».
+  await page.locator('a[href^="/history/session"]').last().click();
+  await page.waitForSelector('text=Упражнения');
+  body = await text();
+  check('an imported workout keeps its weights', /\d+\s*КГ/.test(body), body.slice(0, 200));
+  check('and is marked as entered by hand', has(body, 'ИМПОРТ'), '');
+
+  /*
+   * Рекорды считаются на чтение, поэтому импорт обязан их породить. Пробы
+   * взяты по упражнениям, которые в базе появились ТОЛЬКО из-за этой
+   * выгрузки: если бы разбор списал их на похожие соседние, здесь было бы
+   * пусто, а рекорды тихо ушли бы к чужому упражнению.
+   */
+  await page.goto(`${base}/records`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('text=Личные рекорды');
+  body = await text();
+  check(
+    'the new medium-grip pulldown got its own record, 40 кг × 12',
+    has(body, 'Тяга верхнего блока средним хватом', '40 кг × 12'),
+    '',
+  );
+  check(
+    'so did the third row handle, 35 кг × 12',
+    has(body, 'Тяга нижнего блока к поясу (другая рукоять)', '35 кг × 12'),
+    '',
+  );
+  check(
+    'and the incline dumbbell curl, 10 кг × 12',
+    has(body, 'Подъем гантелей на бицепс на наклонной скамье', '10 кг × 12'),
+    '',
+  );
+
+  await page.goto(`${base}/progress`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('text=Сводка');
+  body = await text();
+  check('the goal counts the imported history', has(body, '/ 100'), '');
 
   // The spec names both iPhone Pro and Pro Max as test targets; the wider one
   // is where a `max-w` column can leave the layout looking unanchored.

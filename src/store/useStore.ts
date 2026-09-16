@@ -42,7 +42,7 @@ import type { FirestoreAdapter } from '@/data/firestore-adapter';
 import { detectPRs, personalRecords, type DetectedPR } from '@/engine/records';
 import { applyRecommendation, type ProgressionRecommendation } from '@/engine/progression';
 import * as engine from '@/engine/session';
-import type { ParsedWorkout } from '@/engine/import-parser';
+import { splitDayName, type ParsedWorkout } from '@/engine/import-parser';
 import { KV_SETTINGS as KV_SETTINGS_KEY, lsDeviceMigrated } from '@/data/storage-keys';
 
 /**
@@ -166,10 +166,15 @@ interface StoreActions {
   addHistoricalSession: (session: WorkoutSession) => void;
   updateSession: (id: ID, fn: (session: WorkoutSession) => WorkoutSession) => void;
   deleteSession: (id: ID) => void;
+  /**
+   * `created` — записано, `skipped` — не разобрано, `duplicates` — даты,
+   * которые в истории уже были. Последние два складывать нельзя: повтор
+   * импорта это не потеря данных, и на экране это разные сообщения.
+   */
   importSessions: (
     workouts: ParsedWorkout[],
     options?: { programId?: ID | null; dayName?: string },
-  ) => { created: number; skipped: number };
+  ) => { created: number; skipped: number; duplicates: number };
 
   /* Progression review */
   acceptRecommendation: (rec: ProgressionRecommendation, weight?: number) => void;
@@ -696,10 +701,26 @@ export const useStore = create<Store>((set, get) => ({
 
     const created: WorkoutSession[] = [];
     let skipped = 0;
+    let duplicates = 0;
+
+    /*
+     * Даты, которые в истории уже есть.
+     *
+     * Без этого повторный импорт того же файла молча удваивал историю: 24
+     * тренировки становились 48, объём и рекорды — вдвое, и разобрать это
+     * потом можно только руками по одной. Считаем по дате, потому что именно
+     * она отличает тренировку в истории; даты внутри одного файла тоже
+     * защищены — множество пополняется по ходу.
+     */
+    const taken = new Set(get().sessions.map((s) => s.date));
 
     for (const workout of workouts) {
       if (!workout.date) {
         skipped += 1;
+        continue;
+      }
+      if (taken.has(workout.date)) {
+        duplicates += 1;
         continue;
       }
       const entries = workout.exercises.filter((e) => e.exerciseId && e.sets.length);
@@ -707,14 +728,19 @@ export const useStore = create<Store>((set, get) => ({
         skipped += 1;
         continue;
       }
+      taken.add(workout.date);
+
+      // «День 1 - Грудь + Трицепс» приходит одной строкой, а на экране это
+      // метка и заголовок — иначе одно и то же печатается дважды.
+      const day = splitDayName(workout.dayName ?? options.dayName ?? 'ИМПОРТ');
 
       const session: WorkoutSession = {
         id: newId('sess'),
         programId: program?.id ?? null,
         programName: program?.name ?? 'Импорт',
         workoutDayId: null,
-        workoutDayName: workout.dayName ?? options.dayName ?? 'ИМПОРТ',
-        workoutDayTitle: workout.dayName ?? '',
+        workoutDayName: day.name,
+        workoutDayTitle: day.title,
         date: workout.date,
         startedAt: `${workout.date}T12:00:00.000Z`,
         completedAt: `${workout.date}T13:00:00.000Z`,
@@ -761,7 +787,7 @@ export const useStore = create<Store>((set, get) => ({
       set({ sessions: [...get().sessions, ...created] });
       persist((adapter) => adapter.putMany('sessions', created));
     }
-    return { created: created.length, skipped };
+    return { created: created.length, skipped, duplicates };
   },
 
   /* ── Progression review ───────────────────────────────────────────── */
@@ -1077,7 +1103,7 @@ async function loadFrom(
     storedSettings = {
       ...storedSettings,
       ...(needsWorkoutGoal(storedSettings?.workoutGoal)
-        ? { workoutGoal: initialWorkoutGoal(todayString()) }
+        ? { workoutGoal: initialWorkoutGoal() }
         : {}),
       seedVersion: SEED_VERSION,
     } as Settings;

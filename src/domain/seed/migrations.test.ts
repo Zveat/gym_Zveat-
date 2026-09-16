@@ -98,23 +98,28 @@ describe('backfillCardio', () => {
 });
 
 describe('цель по тренировкам', () => {
-  it('переносит цель владельца: 100 за 150, 25 уже сделано', () => {
-    const goal = initialWorkoutGoal('2026-09-16');
+  it('переносит цель владельца: 100 за 150 дней', () => {
+    const goal = initialWorkoutGoal();
     expect(goal.target).toBe(100);
     expect(goal.days).toBe(150);
-    expect(goal.baseline).toBe(25);
   });
 
-  it('историю считает с той же даты, что и старт: иначе зачёт удвоится', () => {
-    const goal = initialWorkoutGoal('2026-09-16');
-    expect(goal.countFrom).toBe('2026-09-16');
-    expect(goal.startDate).toBe('2026-09-16');
+  it('считает целиком из истории: ноль зачтённого вручную', () => {
+    // Старый счётчик показывал 25, но в выгрузке 24 тренировки. Проверяемая
+    // цифра — та, что совпадает с историей, поэтому baseline ноль.
+    expect(initialWorkoutGoal().baseline).toBe(0);
+  });
+
+  it('отсчёт с первой тренировки в выгрузке, а не с сегодня', () => {
+    const goal = initialWorkoutGoal();
+    expect(goal.startDate).toBe('2026-08-07');
+    expect(goal.countFrom).toBe(goal.startDate);
   });
 
   it('ставится только когда цели никогда не было', () => {
     expect(needsWorkoutGoal(undefined)).toBe(true);
     // Убранную владельцем цель не возвращаем.
     expect(needsWorkoutGoal(null)).toBe(false);
-    expect(needsWorkoutGoal(initialWorkoutGoal('2026-09-16'))).toBe(false);
+    expect(needsWorkoutGoal(initialWorkoutGoal())).toBe(false);
   });
 });

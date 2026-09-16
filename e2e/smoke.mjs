@@ -256,7 +256,7 @@ async function main() {
   await page.goto(`${base}/more/import`, { waitUntil: 'networkidle' });
   await page.waitForSelector('text=ПРИМЕР');
   await page.click('button:has-text("ПРИМЕР")');
-  await page.click('button:has-text("РАЗОБРАТЬ")');
+  await page.click('button:text-is("РАЗОБРАТЬ")');
   await page.waitForSelector('text=Предпросмотр');
   body = await text();
   check('parses the pasted notes', has(body, 'Предпросмотр'));

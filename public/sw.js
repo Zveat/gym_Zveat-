@@ -46,7 +46,9 @@ function isStatic(url) {
   return (
     url.pathname.startsWith('/_next/static/') ||
     url.pathname.startsWith('/icons/') ||
-    /\.(css|js|png|jpg|jpeg|svg|webp|woff2?)$/.test(url.pathname)
+    // .csv — это готовая выгрузка истории в /data. Без неё кнопка «взять мою
+    // выгрузку» требовала сети, а Wi-Fi в зале ненадёжен.
+    /\.(css|js|png|jpg|jpeg|svg|webp|woff2?|csv)$/.test(url.pathname)
   );
 }
 
