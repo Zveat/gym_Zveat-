@@ -14,7 +14,7 @@ import {
   SegmentedControl,
   cx,
 } from '@/components/ui/primitives';
-import { formatWeight } from '@/engine/format';
+import { formatWeight, plural, WORDS } from '@/engine/format';
 import {
   parseWorkoutCsv,
   parseWorkoutText,
@@ -502,6 +502,46 @@ export default function ImportPage() {
           </section>
 
           <div className="mt-6 flex flex-col gap-2">
+            <Button size="md" full variant="ghost" onClick={() => setPreview(null)}>
+              НАЗАД К ТЕКСТУ
+            </Button>
+            <p className="px-1 text-[11.5px] leading-relaxed text-dim">
+              Тренировки без даты и упражнения без совпадения будут пропущены.
+            </p>
+          </div>
+
+          {/* Место под прибитую кнопку: без него последняя карточка под ней. */}
+          <div aria-hidden="true" className="h-20" />
+        </>
+      )}
+
+      {/*
+        Кнопка прибита к низу, а не лежит под списком.
+        Предпросмотр 24 тренировок — это 16 216 пикселей, девятнадцать экранов
+        прокрутки до кнопки. Решение принимается по плашке сверху («тренировок
+        / подходов / вопросов»), а листать весь список ради кнопки не должен
+        никто. Сидит НАД меню приложения, а не поверх него: перекрыть навигацию
+        своей кнопкой — значит запереть человека на экране импорта.
+      */}
+      {preview ? (
+        <div
+          className="fixed inset-x-0 z-40 border-t border-line bg-bg/95 px-4 pt-3 pb-3 backdrop-blur-xl"
+          style={{ bottom: 'calc(var(--nav-height) + var(--nav-safe-bottom))' }}
+        >
+          <div className="mx-auto max-w-lg">
+            {/*
+              Счётчик строкой, а не в подписи кнопки: «ИМПОРТИРОВАТЬ (24)»
+              делает подпись надстрокой другой кнопки экрана и ломает поиск по
+              точному тексту. Заодно тут влезает больше — и тренировки, и
+              подходы.
+            */}
+            {stats ? (
+              <p className="tnum mb-2 text-center text-[12px] text-dim">
+                {stats.workouts} {plural(stats.workouts, ...WORDS.workout)} ·{' '}
+                {stats.sets} {plural(stats.sets, ...WORDS.set)}
+                {stats.unmatched ? ` · ${stats.unmatched} без пары` : ''}
+              </p>
+            ) : null}
             <Button
               variant="primary"
               size="xl"
@@ -511,15 +551,9 @@ export default function ImportPage() {
             >
               ИМПОРТИРОВАТЬ
             </Button>
-            <Button size="md" full variant="ghost" onClick={() => setPreview(null)}>
-              НАЗАД К ТЕКСТУ
-            </Button>
-            <p className="px-1 text-[11.5px] leading-relaxed text-dim">
-              Тренировки без даты и упражнения без совпадения будут пропущены.
-            </p>
           </div>
-        </>
-      )}
+        </div>
+      ) : null}
     </Screen>
   );
 }

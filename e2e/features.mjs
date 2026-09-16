@@ -928,6 +928,38 @@ async function main() {
   );
   check('nothing is left unmatched', /НЕ НАЙДЕНО\s*0|БЕЗ ПАРЫ\s*0|0\s*БЕЗ/.test(body) || !has(body, 'СОЗДАТЬ УПРАЖНЕНИЕ'), '');
 
+  /*
+   * Кнопка обязана быть видна БЕЗ прокрутки. Предпросмотр 24 тренировок —
+   * это 16 тысяч пикселей, девятнадцать экранов: кнопка под списком означала,
+   * что до неё надо долистать весь предпросмотр. И она не должна перекрывать
+   * меню приложения — иначе с экрана импорта некуда уйти.
+   */
+  const cta = await page.evaluate(() => {
+    const button = [...document.querySelectorAll('button')].find(
+      (b) => b.innerText.trim().toUpperCase() === 'ИМПОРТИРОВАТЬ',
+    );
+    const nav = document.querySelector('nav');
+    if (!button || !nav) return null;
+    const b = button.getBoundingClientRect();
+    const n = nav.getBoundingClientRect();
+    return {
+      visible: b.top >= 0 && b.bottom <= window.innerHeight,
+      aboveNav: Math.round(n.top - b.bottom),
+      scrollY: Math.round(window.scrollY),
+      pageHeight: Math.round(document.documentElement.scrollHeight),
+    };
+  });
+  check(
+    'the import button is on screen without scrolling a 19-screen preview',
+    cta?.visible === true,
+    JSON.stringify(cta),
+  );
+  check(
+    'and it sits above the app nav instead of covering it',
+    cta !== null && cta.aboveNav >= 0,
+    JSON.stringify(cta),
+  );
+
   await page.click('button:text-is("ИМПОРТИРОВАТЬ")');
   await page.waitForSelector('text=Импорт завершён', { timeout: 20_000 });
   body = await text();
@@ -1005,6 +1037,201 @@ async function main() {
   await page.waitForSelector('text=Сводка');
   body = await text();
   check('the goal counts the imported history', has(body, '/ 100'), '');
+
+  console.log('\nСТАРАЯ БАЗА ОБНОВЛЯЕТСЯ ДО НОВОЙ СБОРКИ');
+  /*
+   * САМАЯ ДОРОГАЯ ДЫРА В ПРОВЕРКАХ: всё остальное здесь работает на ЧИСТОЙ
+   * установке, где база засевается уже новой версией и шаг миграции не
+   * запускается вообще. Поэтому трижды подряд владелец находил в зале одно и
+   * то же: изменение засева (разминка у дня, цель, ПСЕВДОНИМЫ БИБЛИОТЕКИ) до
+   * его заведённой базы не доезжало, а в тестах всё было зелёное.
+   *
+   * Здесь база откатывается к состоянию прошлой версии прямо в IndexedDB —
+   * как у него на телефоне, — и проверяется, что обновление её лечит.
+   */
+  await page.setViewportSize(VIEWPORTS.pro);
+  await page.goto(`${base}/`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('text=СПЛИТ — НАБОР МАССЫ');
+
+  const rolledBack = await page.evaluate(async () => {
+    const open = () =>
+      new Promise((resolve, reject) => {
+        const req = indexedDB.open('personal-gym-os', 1);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    const db = await open();
+    const all = (store) =>
+      new Promise((resolve, reject) => {
+        const req = db.transaction(store).objectStore(store).getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    const put = (store, value, key) =>
+      new Promise((resolve, reject) => {
+        const os = db.transaction(store, 'readwrite').objectStore(store);
+        const req = key === undefined ? os.put(value) : os.put(value, key);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    const del = (store, key) =>
+      new Promise((resolve, reject) => {
+        const req = db.transaction(store, 'readwrite').objectStore(store).delete(key);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+
+    // 1. Библиотека прошлой версии: без псевдонимов, без новых упражнений,
+    //    со старым названием переименованного.
+    const exercises = await all('exercises');
+    let stripped = 0;
+    for (const ex of exercises) {
+      if (['ex_lat_pulldown_medium', 'ex_seated_row_alt'].includes(ex.id)) {
+        await del('exercises', ex.id);
+        continue;
+      }
+      const copy = { ...ex };
+      if (copy.aliases) {
+        delete copy.aliases;
+        stripped += 1;
+      }
+      if (copy.id === 'ex_seated_alt_curl') copy.name = 'Подъем гантелей сидя попеременно';
+      await put('exercises', copy);
+    }
+
+    // 2. Программа прошлой версии: без разминки и заминки у дней.
+    const programs = await all('programs');
+    for (const p of programs) {
+      await put('programs', {
+        ...p,
+        days: p.days.map((d) => {
+          const day = { ...d };
+          delete day.warmup;
+          delete day.cooldown;
+          return day;
+        }),
+      });
+    }
+
+    // 3. Настройки прошлой версии: цель с сегодняшней датой и baseline 25.
+    const today = new Date();
+    const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const settings = await new Promise((resolve, reject) => {
+      const req = db.transaction('kv').objectStore('kv').get('settings');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    await put(
+      'kv',
+      {
+        ...settings,
+        seedVersion: 1,
+        workoutGoal: {
+          target: 100,
+          days: 150,
+          startDate: iso,
+          baseline: 25,
+          countFrom: iso,
+        },
+      },
+      'settings',
+    );
+    db.close();
+    return { stripped, staleGoalDate: iso };
+  });
+  check(
+    'the database was rolled back to the previous release',
+    rolledBack.stripped > 0,
+    JSON.stringify(rolledBack),
+  );
+
+  // Обновление приложения = перезагрузка страницы.
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForSelector('text=СПЛИТ — НАБОР МАССЫ');
+  await page.waitForTimeout(800);
+
+  const repaired = await page.evaluate(async () => {
+    const open = () =>
+      new Promise((resolve, reject) => {
+        const req = indexedDB.open('personal-gym-os', 1);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    const db = await open();
+    const all = (store) =>
+      new Promise((resolve, reject) => {
+        const req = db.transaction(store).objectStore(store).getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    const exercises = await all('exercises');
+    const programs = await all('programs');
+    const settings = await new Promise((resolve, reject) => {
+      const req = db.transaction('kv').objectStore('kv').get('settings');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    const byId = (id) => exercises.find((e) => e.id === id);
+    return {
+      withAliases: exercises.filter((e) => (e.aliases ?? []).length).length,
+      added: ['ex_lat_pulldown_medium', 'ex_seated_row_alt'].filter((id) => byId(id)).length,
+      renamed: byId('ex_seated_alt_curl')?.name ?? null,
+      pecAliases: byId('ex_pec_deck')?.aliases ?? byId('ex_chest_fly_machine')?.aliases ?? null,
+      daysWithWarmup: programs[0]?.days.filter((d) => d.warmup && d.cooldown).length ?? 0,
+      totalDays: programs[0]?.days.length ?? 0,
+      goalStart: settings?.workoutGoal?.startDate ?? null,
+      goalBaseline: settings?.workoutGoal?.baseline ?? null,
+      seedVersion: settings?.seedVersion ?? null,
+    };
+  });
+
+  // Ровно столько упражнений засева несут псевдонимы. Число точное, а не
+  // «не меньше»: пропавший псевдоним — это молча несведённое название в
+  // импорте, и заметить его иначе нечем.
+  check(
+    'aliases are restored into the existing library',
+    repaired.withAliases === 16,
+    `${repaired.withAliases} exercises carry aliases, expected 16`,
+  );
+  check(
+    'the two new exercises are added to an existing library',
+    repaired.added === 2,
+    `${repaired.added} of 2`,
+  );
+  check(
+    'the renamed exercise picks up its new name',
+    repaired.renamed === 'Подъем гантелей сидя попеременно (наклон)',
+    String(repaired.renamed),
+  );
+  check(
+    'every day of the existing program gets its warm-up and cool-down',
+    repaired.totalDays > 0 && repaired.daysWithWarmup === repaired.totalDays,
+    `${repaired.daysWithWarmup} of ${repaired.totalDays}`,
+  );
+  check(
+    'the stale goal is replaced with the real start date',
+    repaired.goalStart === '2026-08-07' && repaired.goalBaseline === 0,
+    JSON.stringify({ start: repaired.goalStart, baseline: repaired.goalBaseline }),
+  );
+  check('the seed version is bumped so it runs once', repaired.seedVersion === 4, String(repaired.seedVersion));
+
+  // И главное: теперь импорт узнаёт ВСЕ названия из выгрузки. Без синхронизации
+  // библиотеки их было шесть штук «не найдено» и 31 вопрос на 24 тренировки.
+  await page.goto(`${base}/more/import`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('text=Моя выгрузка');
+  await page.click('button:text-is("ВЗЯТЬ МОЮ ВЫГРУЗКУ")');
+  await page.waitForSelector('text=Предпросмотр', { timeout: 15_000 });
+  const unmatched = await page.evaluate(
+    () => document.body.innerText.match(/не найдено в библиотеке/g)?.length ?? 0,
+  );
+  check('the import asks nothing on an upgraded database', unmatched === 0, `${unmatched} questions`);
+  body = await text();
+  check(
+    'and it still sees all 24 workouts and 516 sets',
+    /\b24\b/.test(body) && /\b516\b/.test(body),
+    '',
+  );
 
   // The spec names both iPhone Pro and Pro Max as test targets; the wider one
   // is where a `max-w` column can leave the layout looking unanchored.
