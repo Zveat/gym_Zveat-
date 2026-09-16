@@ -88,6 +88,30 @@ async function main() {
   check('records the actual weight, not the plan', has(body, '52.5 × 12'));
   check('moves on to set 2 of 4', has(body, 'Подход 2 из 4'));
 
+  // ГЛАВНАЯ МЕТРИКА ТЗ: сколько действий на обычный подход. Цель — один тап,
+  // и всё ломалось здесь: следующий подход заполнялся из ПЛАНА, поэтому
+  // поставленные 52.5 кг возвращались к 50 и вес приходилось выставлять заново
+  // на каждом подходе. Проверяем сам счётчик, а не текст истории.
+  const stepper = await page.evaluate(() =>
+    [...document.querySelectorAll('span')]
+      .filter((el) => /^\d+(\.\d+)?$/.test(el.innerText.trim()) && parseFloat(getComputedStyle(el).fontSize) > 40)
+      .map((el) => el.innerText.trim())
+      .slice(0, 2),
+  );
+  check('set 2 opens with what was actually lifted, not the plan', stepper[0] === '52.5', stepper.join(' × '));
+
+  // Экран прокручивается почти на два окна, поэтому главный тап обязан
+  // оставаться под пальцем: раньше кнопка уезжала вместе с содержимым.
+  const sticky = await page.evaluate(() => {
+    window.scrollTo(0, document.documentElement.scrollHeight);
+    const save = [...document.querySelectorAll('button')].find((b) => /СОХРАНИТЬ ПОДХОД/.test(b.innerText));
+    if (!save) return null;
+    const box = save.getBoundingClientRect();
+    return { inView: box.bottom <= window.innerHeight + 1, fixed: getComputedStyle(save.closest('div[class*=fixed]') ?? save).position };
+  });
+  check('the save button stays put when the screen is scrolled', sticky?.inView === true && sticky.fixed === 'fixed', JSON.stringify(sticky));
+  await page.evaluate(() => window.scrollTo(0, 0));
+
   // The screen the user actually stares at between sets, with real numbers on
   // it. Checked here rather than on an empty screen because the set history,
   // the plan line and the logged weight only exist once a set is done.

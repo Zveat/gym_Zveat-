@@ -376,3 +376,52 @@ export function currentExerciseId(session: WorkoutSession): ID | null {
 export function nextSet(exercise: SessionExercise): SessionSet | null {
   return exercise.sets.find((set) => set.actual === null) ?? null;
 }
+
+/** Когда план не называет повторений вообще — с чего начать счётчик. */
+const DEFAULT_REPS = 10;
+
+/**
+ * Чем заполнить поля подхода, чтобы после обычного подхода оставался один тап.
+ *
+ * План — плохой источник для второго и следующих подходов. Если человек поставил
+ * 72.5 вместо запланированных 70, то следующий подход возвращался к 70, и вес
+ * приходилось выставлять заново на каждом подходе. Поэтому берём то, что он
+ * фактически сделал в предыдущем подходе ЭТОГО упражнения.
+ *
+ * Но переносим не всегда, а только когда план у двух подходов одинаковый:
+ *
+ *   — план 4×12 по 70 кг, сделал 72.5 → следующий подход 72.5. Это тот случай,
+ *     ради которого всё и делается;
+ *   — план идёт лестницей (70, 75, 80) — следуем плану: лестница задана
+ *     намеренно, и тянуть в неё прошлый вес значило бы её сломать;
+ *   — тип подхода другой (отказной, дроп-сет) — следуем плану: у него своя
+ *     цель по повторениям, и 12 из рабочего подхода там не к месту.
+ *
+ * Предсказуемость здесь важнее догадливости: в зале неверное подставленное
+ * число хуже, чем отсутствие подстановки — его можно не заметить и записать.
+ */
+export function suggestedInput(
+  exercise: SessionExercise,
+  set: SessionSet,
+): { weight: number | null; reps: number } {
+  const planReps = set.plan.repsMax ?? set.plan.repsMin ?? DEFAULT_REPS;
+
+  // Уже выполненный подход показывает себя, а не догадку.
+  if (set.actual) return { weight: set.actual.weight, reps: set.actual.reps };
+
+  const previous = [...exercise.sets]
+    .filter((s) => s.setNumber < set.setNumber && s.actual !== null)
+    .sort((a, b) => b.setNumber - a.setNumber)[0];
+
+  if (!previous?.actual) return { weight: set.plan.weight, reps: planReps };
+  if (previous.setType !== set.setType) return { weight: set.plan.weight, reps: planReps };
+  if (previous.plan.weight !== set.plan.weight) return { weight: set.plan.weight, reps: planReps };
+
+  const samePlanReps =
+    previous.plan.repsMin === set.plan.repsMin && previous.plan.repsMax === set.plan.repsMax;
+
+  return {
+    weight: previous.actual.weight,
+    reps: samePlanReps ? previous.actual.reps : planReps,
+  };
+}

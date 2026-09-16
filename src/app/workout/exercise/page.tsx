@@ -26,7 +26,7 @@ import type { Difficulty, ObservationTag, SessionSet } from '@/domain/types';
 import { formatDateShort, formatRepRange, formatWeight, MUSCLE_LABEL } from '@/engine/format';
 import { lastPerformance } from '@/engine/history';
 import { personalRecords } from '@/engine/records';
-import { nextSet } from '@/engine/session';
+import { nextSet, suggestedInput } from '@/engine/session';
 import { useHaptics } from '@/hooks/useHaptics';
 import { useActiveSession, useExerciseNotes } from '@/store/selectors';
 import { useStore } from '@/store/useStore';
@@ -84,17 +84,19 @@ function ExerciseWorkout() {
     return nextSet(entry);
   }, [entry, selectedSetId]);
 
-  // Seed the steppers from the plan, or from what was already recorded.
+  /**
+   * Подставляем то, что человек ФАКТИЧЕСКИ сделал в предыдущем подходе, а не
+   * план. План возвращал вес к запланированному на каждом подходе, поэтому
+   * поставленные 72.5 кг приходилось выставлять заново четыре раза за
+   * упражнение. Правила переноса — в `suggestedInput`.
+   */
   useEffect(() => {
-    if (!targetSet) return;
-    const source = targetSet.actual ?? targetSet.plan;
-    const planWeight = 'weight' in source ? source.weight : null;
-    const planReps =
-      targetSet.actual?.reps ?? targetSet.plan.repsMax ?? targetSet.plan.repsMin ?? 10;
-    setWeight(planWeight ?? 0);
-    setReps(planReps);
+    if (!entry || !targetSet) return;
+    const suggestion = suggestedInput(entry, targetSet);
+    setWeight(suggestion.weight ?? 0);
+    setReps(suggestion.reps);
     setDifficulty(targetSet.actual?.difficulty ?? null);
-  }, [targetSet]);
+  }, [entry, targetSet]);
 
   const history = useMemo(
     () => (entry ? lastPerformance(sessions, entry.exerciseId, session?.id) : null),
@@ -331,9 +333,6 @@ function ExerciseWorkout() {
               <DifficultyPicker value={difficulty} onChange={setDifficulty} />
             </div>
 
-            <Button variant="primary" size="xl" full className="mt-5" onClick={save}>
-              {targetSet.actual ? 'ОБНОВИТЬ ПОДХОД ✓' : 'СОХРАНИТЬ ПОДХОД ✓'}
-            </Button>
           </Card>
         ) : (
           <Card className="p-5 text-center">
@@ -449,7 +448,33 @@ function ExerciseWorkout() {
             </Button>
           )}
         </div>
+
+        {/*
+          Запас под закреплённой кнопкой, чтобы она ничего не накрывала в самом
+          низу прокрутки.
+        */}
+        {targetSet ? <div className="h-[92px]" aria-hidden="true" /> : null}
       </Screen>
+
+      {/*
+        ГЛАВНОЕ ДЕЙСТВИЕ ЗАКРЕПЛЕНО СНИЗУ.
+        Экран упражнения — 1458pt при окне 852pt, то есть прокручивается почти
+        на два экрана. Кнопка стояла в потоке и уезжала вверх вместе с
+        содержимым: чтобы записать подход, надо было сначала найти кнопку. В
+        зале это главный тап, он обязан быть под большим пальцем всегда.
+      */}
+      {targetSet ? (
+        <div
+          className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-bg/92 px-4 pt-3 backdrop-blur-xl"
+          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}
+        >
+          <div className="mx-auto w-full max-w-lg">
+            <Button variant="primary" size="xl" full onClick={save}>
+              {targetSet.actual ? 'ОБНОВИТЬ ПОДХОД ✓' : 'СОХРАНИТЬ ПОДХОД ✓'}
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       <ExerciseDetailsSheet
         open={details !== null}
