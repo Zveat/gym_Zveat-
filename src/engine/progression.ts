@@ -1,6 +1,8 @@
 import type {
+  Difficulty,
   Exercise,
   ID,
+  ModeConfig,
   Program,
   ProgramExercise,
   ProgressionConfig,
@@ -8,6 +10,7 @@ import type {
   WorkoutSession,
 } from '@/domain/types';
 import { roundToStep } from './format';
+import { applySetCount } from './session';
 import { exerciseHistory } from './history';
 import { isWorkingSet } from './volume';
 
@@ -60,13 +63,41 @@ export interface RecommendOptions {
   /** Past sessions, excluding the one being reviewed. */
   sessions: WorkoutSession[];
   roundStep?: number;
+  /**
+   * Режим тренировки, чтобы посчитать ЗАПЛАНИРОВАННОЕ число подходов.
+   *
+   * Из самой сессии его не вычислить: `finishSession` выбрасывает подходы,
+   * которых не было, поэтому после завершения «сделал 1 из 4» и «в плане был
+   * 1» выглядят одинаково. План берём из программы и правим множителем
+   * режима — тем же, что при запуске тренировки.
+   */
+  modeSnapshot?: ModeConfig | null;
 }
 
 export function recommendForExercise(options: RecommendOptions): ProgressionRecommendation {
-  const { entry, programExercise, exercise, sessions, roundStep = 0.5 } = options;
+  const {
+    entry,
+    programExercise,
+    exercise,
+    sessions,
+    roundStep = 0.5,
+    modeSnapshot = null,
+  } = options;
   const config: ProgressionConfig = programExercise?.progression ?? { type: 'manual' };
   const increment = config.increment ?? exercise?.increment ?? 2.5;
-  const sets = workingSets(entry).filter((s) => s.actual);
+  const allWorking = workingSets(entry);
+  const sets = allWorking.filter((s) => s.actual);
+
+  const fromProgram = programExercise
+    ? programExercise.sets.filter((set) => set.setType !== 'warmup').length
+    : 0;
+  // Упражнение, добавленное на ходу, плана не имеет — тогда сделанное и есть
+  // план, и правило работает как раньше.
+  const plannedCount = fromProgram
+    ? modeSnapshot
+      ? applySetCount(fromProgram, modeSnapshot)
+      : fromProgram
+    : allWorking.length;
   const performed = sets.map((s) => ({ weight: s.actual!.weight, reps: s.actual!.reps }));
   const currentWeight = plannedWorkingWeight(entry);
 
@@ -104,7 +135,14 @@ export function recommendForExercise(options: RecommendOptions): ProgressionReco
 
   switch (config.type) {
     case 'double':
-      return doubleProgression(base, { config, increment, sets, roundStep, currentWeight });
+      return doubleProgression(base, {
+        config,
+        increment,
+        sets,
+        roundStep,
+        currentWeight,
+        planned: plannedCount,
+      });
     case 'fixed':
       return {
         ...base,
@@ -127,6 +165,8 @@ interface RuleContext {
   sets: SessionExercise['sets'];
   roundStep: number;
   currentWeight: number | null;
+  /** Сколько рабочих подходов было ЗАПЛАНИРОВАНО, а не сделано. */
+  planned?: number;
   sessions?: WorkoutSession[];
   entry?: SessionExercise;
 }
@@ -135,19 +175,61 @@ function doubleProgression(
   base: ProgressionRecommendation,
   ctx: RuleContext,
 ): ProgressionRecommendation {
-  const { config, increment, sets, roundStep, currentWeight } = ctx;
+  const { config, increment, sets, roundStep, currentWeight, planned = sets.length } = ctx;
   const target = config?.repTarget ?? Math.max(...sets.map((s) => s.plan.repsMax ?? 12));
   const reps = sets.map((s) => s.actual!.reps);
   const allHit = reps.every((r) => r >= target);
   const minReps = Math.min(...reps);
   const lowFloor = Math.max(1, Math.round(target * 0.6));
 
+  /*
+   * ПРИБАВЛЯТЬ МОЖНО ТОЛЬКО ЗА ПОЛНЫЙ ОБЪЁМ.
+   *
+   * Правило смотрело лишь на ВЫПОЛНЕННЫЕ подходы, поэтому один подход из
+   * четырёх давал «цель закрыта во всех подходах» и предлагал +2.5 кг:
+   * условие «все сделанные дотянули» при одном подходе выполняется само
+   * собой. Подъём гантелей в стороны так и вышел — 7.5 кг, один подход,
+   * «можно прибавить». Недоделанный объём — это не повод добавлять вес.
+   */
+  if (sets.length < planned) {
+    const missing = planned - sets.length;
+    return {
+      ...base,
+      verdict: 'hold',
+      repTarget: target,
+      reason: `Сделано ${sets.length} из ${planned} подходов — ${missing} не выполнено. Вес не меняем.`,
+      suggestedWeight: currentWeight,
+    };
+  }
+
   if (allHit) {
+    /*
+     * Отказ или «тяжело» в последнем подходе перебивает закрытые повторения.
+     * Закрыть 12 на пределе и получить сверху +2.5 кг — это way к травме, а
+     * не прогрессия. Если тяжесть не отмечена (null), правило работает как
+     * раньше: судить не по чему.
+     */
+    const topEffort = sets
+      .map((set) => set.actual!.difficulty)
+      .filter((d): d is Difficulty => d !== null);
+    const maximal = topEffort.some((d) => d === 'failure' || d === 'hard');
+
+    if (maximal) {
+      const label = topEffort.includes('failure') ? 'отказ' : 'тяжело';
+      return {
+        ...base,
+        verdict: 'hold',
+        repTarget: target,
+        reason: `Цель закрыта, но подход отмечен как «${label}». Закрепляем вес.`,
+        suggestedWeight: currentWeight,
+      };
+    }
+
     return {
       ...base,
       verdict: 'increase',
       repTarget: target,
-      reason: `Цель закрыта: ${target} повторений во всех подходах.`,
+      reason: `Цель закрыта: ${target} повторений во всех ${planned} подходах.`,
       suggestedWeight:
         currentWeight === null ? null : roundToStep(currentWeight + increment, roundStep),
     };
@@ -278,6 +360,7 @@ export function reviewSession(
         exercise: library.get(entry.exerciseId) ?? null,
         sessions: past,
         roundStep,
+        modeSnapshot: session.modeSnapshot,
       }),
     )
     .filter((rec) => rec.verdict !== 'none')

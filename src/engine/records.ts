@@ -151,22 +151,52 @@ export function primaryPR(prs: DetectedPR[]): DetectedPR | null {
   return null;
 }
 
+export interface SessionPRSummary {
+  /** Упражнений, поставивших новый лучший результат. */
+  count: number;
+  /**
+   * Упражнений, у которых В ИСТОРИИ ЕСТЬ с чем сравнивать.
+   *
+   * Ноль здесь и ноль в `count` — разные утверждения: «сравнивать не с чем» и
+   * «сравнили, рекордов нет». Владелец поднял 90 кг впервые в жизни, а экран
+   * показал «новых рекордов 0», потому что историю он ещё не перенёс и
+   * упражнение считалось впервые тренируемым. Число выглядело как ответ, хотя
+   * ответа не было. Экран обязан различать эти два случая.
+   */
+  comparable: number;
+}
+
 /**
  * How many exercises in this session set a new best. Counted per exercise, not
  * per set, so escalating sets inside one workout read as one record.
  */
-export function sessionPRCount(sessions: WorkoutSession[], session: WorkoutSession): number {
+export function sessionPRSummary(
+  sessions: WorkoutSession[],
+  session: WorkoutSession,
+): SessionPRSummary {
   const past = sessions.filter((s) => s.id !== session.id);
   let count = 0;
+  let comparable = 0;
+
   for (const entry of session.exercises) {
-    const baseline = personalRecords(past, entry.exerciseId, entry.name, { before: session.date });
-    const prior = baseline.bestPerformance?.value;
-    if (prior === undefined) continue; // first time trained: baseline only
+    // Упражнение без выполненных подходов вообще не участвует: пропущенное
+    // упражнение не «несравнимое», его просто не делали.
     const best = entry.sets.reduce((max, set) => {
       if (!set.actual || set.setType === 'warmup') return max;
       return Math.max(max, estimated1RM(set.actual.weight, set.actual.reps));
     }, 0);
+    if (best <= 0) continue;
+
+    const baseline = personalRecords(past, entry.exerciseId, entry.name, { before: session.date });
+    const prior = baseline.bestPerformance?.value;
+    if (prior === undefined) continue; // первый раз: это отсчёт, а не рекорд
+    comparable += 1;
     if (best > prior + 0.01) count += 1;
   }
-  return count;
+
+  return { count, comparable };
+}
+
+export function sessionPRCount(sessions: WorkoutSession[], session: WorkoutSession): number {
+  return sessionPRSummary(sessions, session).count;
 }

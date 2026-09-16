@@ -71,6 +71,33 @@ const WEEKDAYS = [
   'СУББОТА',
 ];
 
+/**
+ * Что человек реально сделал в подходах: «70 кг · 12 · 12 · 12» когда вес
+ * один, и «70×12 · 70×12 · 70×12 · 90×12» когда он менялся.
+ *
+ * ЗАЧЕМ РАЗВИЛКА. Экран итогов печатал вес из ПЛАНА и дальше только
+ * повторения. Владелец сделал четвёртый подход жима ногами на 90 кг при плане
+ * 70 — и прочитал «70 кг · 12 · 12 · 12 · 12», то есть строка утверждала, что
+ * все четыре подхода были по 70. Подход был записан, но на экране его не
+ * существовало. Одинаковый вес выносим вперёд, потому что это обычный случай
+ * и так короче; разный — печатаем у каждого подхода.
+ */
+export function formatPerformedSets(
+  performed: { weight: number; reps: number }[],
+  plannedWeight: number | null = null,
+): string {
+  if (!performed.length) return '—';
+
+  const weights = [...new Set(performed.map((p) => p.weight))];
+  if (weights.length === 1) {
+    const weight = weights[0] ?? plannedWeight;
+    const head = weight === null ? '' : `${formatWeight(weight)} кг · `;
+    return head + performed.map((p) => p.reps).join(' · ');
+  }
+
+  return performed.map((p) => `${formatWeight(p.weight)}×${p.reps}`).join(' · ');
+}
+
 /** Parses `YYYY-MM-DD` as a *local* date (never UTC — off-by-one dates are a bug). */
 export function parseDate(date: string): Date {
   const [y, m, d] = date.split('-').map(Number);

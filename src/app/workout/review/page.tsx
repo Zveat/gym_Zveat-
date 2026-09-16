@@ -16,10 +16,22 @@ import {
   cx,
 } from '@/components/ui/primitives';
 import type { ProgressionRecommendation, Verdict } from '@/engine/progression';
-import { DIFFICULTY_META, formatDuration, formatVolume, formatWeight } from '@/engine/format';
+import {
+  DIFFICULTY_META,
+  formatDuration,
+  formatPerformedSets,
+  formatVolume,
+  formatWeight,
+} from '@/engine/format';
 import { averageDifficulty, sessionExerciseCount } from '@/engine/analytics';
 import { reviewSession } from '@/engine/progression';
-import { detectPRs, personalRecords, primaryPR, sessionPRCount, type DetectedPR } from '@/engine/records';
+import {
+  detectPRs,
+  personalRecords,
+  primaryPR,
+  sessionPRSummary,
+  type DetectedPR,
+} from '@/engine/records';
 import { sessionVolume, sessionWorkingSetCount } from '@/engine/volume';
 import { useStore } from '@/store/useStore';
 
@@ -72,8 +84,8 @@ function Review() {
     () => (session ? reviewSession(session, programs, exercises, sessions) : []),
     [session, programs, exercises, sessions],
   );
-  const prCount = useMemo(
-    () => (session ? sessionPRCount(sessions, session) : 0),
+  const prs = useMemo(
+    () => (session ? sessionPRSummary(sessions, session) : { count: 0, comparable: 0 }),
     [sessions, session],
   );
 
@@ -147,12 +159,24 @@ function Review() {
           label="Средняя тяжесть"
           value={avgDifficulty ? DIFFICULTY_META[avgDifficulty].label : '—'}
         />
+        {/*
+          Прочерк, а не ноль, когда сравнивать не с чем: «новых рекордов 0»
+          читается как «ты ничего не побил», хотя приложение просто не знает
+          прошлого. Владелец поднял 90 кг впервые и увидел ноль.
+        */}
         <Stat
           label="Новых рекордов"
-          value={prCount}
-          tone={prCount > 0 ? 'accent' : 'default'}
+          value={prs.comparable === 0 ? '—' : prs.count}
+          tone={prs.count > 0 ? 'accent' : 'default'}
         />
       </Card>
+
+      {prs.comparable === 0 ? (
+        <p className="mt-3 px-1 text-[12px] leading-relaxed text-dim">
+          Рекорды считать не с чем: в истории нет прошлых тренировок с этими упражнениями.
+          Перенесите историю — и рекорды посчитаются сами, в том числе за эту тренировку.
+        </p>
+      ) : null}
 
       {/*
         Заминка отмечается здесь, а не на экране тренировки: ходьба идёт уже
@@ -207,9 +231,13 @@ function Review() {
                   <Card className={cx('p-4', state === 'ignored' && 'opacity-50')}>
                     <p className="text-[15px] leading-snug font-medium">{rec.exerciseName}</p>
 
+                    {/*
+                      Фактические веса, а не план: при разном весе в подходах
+                      строка «70 кг · 12 · 12 · 12 · 12» врала — четвёртый
+                      подход был на 90.
+                    */}
                     <p className="tnum mt-2 text-[13.5px] text-dim">
-                      {rec.currentWeight !== null ? `${formatWeight(rec.currentWeight)} кг · ` : ''}
-                      {rec.performed.map((p) => p.reps).join(' · ') || '—'}
+                      {formatPerformedSets(rec.performed, rec.currentWeight)}
                     </p>
 
                     <p

@@ -30,7 +30,7 @@ import {
   MUSCLE_LABEL,
   WORDS,
 } from '@/engine/format';
-import { sessionPRCount } from '@/engine/records';
+import { sessionPRSummary } from '@/engine/records';
 import { exerciseVolume, sessionVolume, sessionWorkingSetCount } from '@/engine/volume';
 import { useStore } from '@/store/useStore';
 
@@ -69,8 +69,8 @@ function SessionDetail() {
   const deleteSession = useStore((s) => s.deleteSession);
 
   const session = sessions.find((s) => s.id === id) ?? null;
-  const prCount = useMemo(
-    () => (session ? sessionPRCount(sessions, session) : 0),
+  const prs = useMemo(
+    () => (session ? sessionPRSummary(sessions, session) : { count: 0, comparable: 0 }),
     [sessions, session],
   );
 
@@ -162,7 +162,12 @@ function SessionDetail() {
         />
         <Stat label="Рабочих подходов" value={sessionWorkingSetCount(session)} />
         <Stat label="Объём" value={formatVolume(sessionVolume(session))} unit="кг" />
-        <Stat label="Новых рекордов" value={prCount} tone={prCount ? 'accent' : 'default'} />
+        {/* Прочерк вместо нуля, когда сравнивать не с чем. */}
+        <Stat
+          label="Новых рекордов"
+          value={prs.comparable === 0 ? '—' : prs.count}
+          tone={prs.count ? 'accent' : 'default'}
+        />
       </Card>
 
       {session.isImported ? (
