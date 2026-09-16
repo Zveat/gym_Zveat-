@@ -172,14 +172,15 @@ async function main() {
   );
   check('offers accept / edit / ignore', has(body, 'ПРИНЯТЬ', 'ИЗМЕНИТЬ', 'ОСТАВИТЬ'));
 
-  // §39: итоги — это не «готово», а цифры. §44: вес тела предлагается, но не
-  // требуется — «Пропустить» должно быть рядом, иначе это уже принуждение.
+  // §39: итоги — это не «готово», а цифры.
   check(
     'the summary counts exercises, sets, volume and difficulty',
     has(body, 'Упражнений', 'Рабочих подходов', 'Объём', 'Средняя тяжесть', 'Новых рекордов'),
     body.slice(0, 200),
   );
-  check('it offers body weight without insisting', has(body, 'Вес тела сегодня?', 'ПРОПУСТИТЬ'));
+  // Владелец снял §44: взвешивается редко, и предложение после каждой
+  // тренировки было бы шумом. Проверяем, что его тут нет.
+  check('the summary does not ask for body weight', !has(body, 'Вес тела сегодня?'));
   const reviewUnreadable = await assertReadableText(page);
   check('the review screen is readable', reviewUnreadable === null, reviewUnreadable ?? '');
 

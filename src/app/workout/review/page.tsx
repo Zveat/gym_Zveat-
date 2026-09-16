@@ -20,7 +20,6 @@ import { averageDifficulty, sessionExerciseCount } from '@/engine/analytics';
 import { reviewSession } from '@/engine/progression';
 import { detectPRs, personalRecords, primaryPR, sessionPRCount, type DetectedPR } from '@/engine/records';
 import { sessionVolume, sessionWorkingSetCount } from '@/engine/volume';
-import { todayString } from '@/domain/ids';
 import { useStore } from '@/store/useStore';
 
 /**
@@ -96,24 +95,6 @@ function Review() {
 
   const avgDifficulty = useMemo(() => (session ? averageDifficulty(session) : null), [session]);
 
-  /**
-   * §44: вес тела предлагается, а не требуется.
-   *
-   * Только если сегодня ещё не взвешивались: иначе предложение появлялось бы
-   * после каждой тренировки и стало бы шумом. И только предложение — блок
-   * закрывается «Пропустить» и в тренировочный поток не влезает.
-   */
-  const bodyWeightLogs = useStore((st) => st.bodyWeightLogs);
-  const addBodyWeight = useStore((st) => st.addBodyWeight);
-  const today = todayString();
-  const weighedToday = bodyWeightLogs.some((log) => log.date === today);
-  const lastWeight = useMemo(
-    () => [...bodyWeightLogs].sort((a, b) => b.date.localeCompare(a.date))[0]?.weight ?? null,
-    [bodyWeightLogs],
-  );
-  const [askWeight, setAskWeight] = useState(true);
-  const [weightDraft, setWeightDraft] = useState<number | null>(null);
-
   const [handled, setHandled] = useState<Record<string, 'accepted' | 'ignored'>>({});
   const [editing, setEditing] = useState<ProgressionRecommendation | null>(null);
   const [editWeight, setEditWeight] = useState(0);
@@ -155,43 +136,6 @@ function Review() {
           tone={prCount > 0 ? 'accent' : 'default'}
         />
       </Card>
-
-      {askWeight && !weighedToday ? (
-        <Card className="mt-5 p-4">
-          <p className="text-[14px] font-semibold">Вес тела сегодня?</p>
-          <p className="mt-1 text-[12.5px] text-dim">
-            {lastWeight !== null
-              ? `В прошлый раз ${formatWeight(lastWeight)} кг.`
-              : 'Первое взвешивание — дальше приложение само покажет динамику.'}
-          </p>
-          <div className="mt-3">
-            <BigStepper
-              label="Вес"
-              unit="кг"
-              value={weightDraft ?? lastWeight ?? 80}
-              step={0.1}
-              min={30}
-              onChange={setWeightDraft}
-            />
-          </div>
-          <div className="mt-3 flex gap-2">
-            <Button size="md" variant="ghost" className="flex-1" onClick={() => setAskWeight(false)}>
-              ПРОПУСТИТЬ
-            </Button>
-            <Button
-              size="md"
-              variant="primary"
-              className="flex-1"
-              onClick={() => {
-                addBodyWeight(weightDraft ?? lastWeight ?? 80, today);
-                setAskWeight(false);
-              }}
-            >
-              СОХРАНИТЬ
-            </Button>
-          </div>
-        </Card>
-      ) : null}
 
       {/* §40: что именно стало рекордом — это и даёт ощущение результата. */}
       {achievements.length ? (
