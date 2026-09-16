@@ -469,6 +469,28 @@ async function main() {
   const nag = await page.locator('text=панель браузера').count();
   check('no install hint when the browser takes nothing', nag === 0, `${nag} shown`);
 
+  console.log('\nWIPING EVERYTHING TAKES MORE THAN ONE TAP');
+  // One tap on a phone erases every workout with no undo. Typing the word is
+  // awkward on purpose: the action must not be reachable by accident.
+  await page.goto(`${base}/more/settings`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('text=Сбросить всё и вернуть программу');
+  await page.click('text=Сбросить всё и вернуть программу');
+  await page.waitForSelector('text=Сбросить все данные?');
+  const confirmBtn = page.locator('div[role="dialog"] button:has-text("Сбросить")');
+  check('the confirm button starts disabled', await confirmBtn.isDisabled());
+
+  await page.fill('div[role="dialog"] input', 'СБРОС');
+  check('a near miss still does not arm it', await confirmBtn.isDisabled());
+
+  await page.fill('div[role="dialog"] input', 'сбросить');
+  check('the right word arms it, case aside', !(await confirmBtn.isDisabled()));
+
+  // Leave without wiping: the rest of the suite needs the data.
+  await page.click('div[role="dialog"] button:has-text("Отмена")');
+  await page.waitForTimeout(200);
+  const stillThere = await page.locator('text=Сбросить все данные?').count();
+  check('cancelling closes it and changes nothing', stillThere === 0);
+
   console.log('\nTHE BUILD IT IS RUNNING IS VISIBLE AND CHECKED');
   // On a phone the app is never reloaded — it is minimised and restored — so a
   // deployed fix can fail to reach the user for weeks with nobody able to tell.

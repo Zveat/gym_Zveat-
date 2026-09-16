@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { Screen, ScreenHeader } from '@/components/layout/Screen';
 import { useDisplayMode } from '@/components/layout/DisplayMode';
 import { BUILD_ID } from '@/engine/app-version';
+import { readStats, readTotals } from '@/data/read-meter';
 import { ConfirmDialog } from '@/components/ui/Sheet';
 import { Field, TextInput, Toggle } from '@/components/ui/inputs';
 import {
@@ -20,7 +21,7 @@ import {
 import { signOutAccount } from '@/data/firebase-app';
 import { MODE_COLOR, MODE_ORDER } from '@/domain/modes';
 import type { DatabaseSnapshot, ModeConfig, WorkoutMode } from '@/domain/types';
-import { MODE_LABEL } from '@/engine/format';
+import { MODE_LABEL, WORDS, count } from '@/engine/format';
 import { useStore } from '@/store/useStore';
 
 /**
@@ -219,6 +220,13 @@ export default function SettingsPage() {
         <DisplayModeCard />
       </section>
 
+      {storage === 'firestore' ? (
+        <section className="mt-6">
+          <SectionTitle>Чтений из базы</SectionTitle>
+          <ReadMeterCard />
+        </section>
+      ) : null}
+
       <ConfirmDialog
         open={confirmSignOut}
         title="Выйти из аккаунта?"
@@ -241,6 +249,7 @@ export default function SettingsPage() {
         }
         confirmLabel="Сбросить"
         danger
+        requireWord="СБРОСИТЬ"
         onConfirm={() => {
           void resetEverything();
           setConfirmReset(false);
@@ -303,6 +312,65 @@ function DisplayModeCard() {
         ))}
       </Card>
       <p className="mt-2 px-1 text-[12px] leading-relaxed text-dim">{explanation}</p>
+    </>
+  );
+}
+
+/**
+ * За что платим и сколько ждём при открытии.
+ *
+ * Firestore берёт деньги за чтение документов, а сколько их — из приложения не
+ * видно. Два полных чтения базы по сети на каждом запуске нашлись только
+ * чтением кода: на экране всё выглядело одинаково. Цифра здесь делает это
+ * видимым сразу.
+ */
+function ReadMeterCard() {
+  const totals = readTotals();
+  const rows = readStats();
+  const LABEL: Record<string, string> = { server: 'сеть', cache: 'кэш', watch: 'подписка' };
+
+  return (
+    <>
+      <Card className="mt-2 p-4">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="text-[13px] text-dim">По сети (платно)</span>
+          <span className="tnum text-[15px] font-semibold">
+            {count(totals.serverDocs, WORDS.document)}
+          </span>
+        </div>
+        <div className="mt-2.5 flex items-baseline justify-between gap-3 border-t border-line pt-2.5">
+          <span className="text-[13px] text-dim">Всего с открытия</span>
+          <span className="tnum text-[13.5px] font-medium">
+            {totals.docs} / {count(totals.calls, WORDS.request)}
+          </span>
+        </div>
+      </Card>
+
+      {rows.length ? (
+        <Card className="mt-2 p-4">
+          {rows.map((row, index) => (
+            <div
+              key={`${row.collection}:${row.source}`}
+              className={cx(
+                'flex items-baseline justify-between gap-3',
+                index > 0 && 'mt-2 border-t border-line pt-2',
+              )}
+            >
+              <span className="text-[12.5px] text-dim">
+                {row.collection} · {LABEL[row.source] ?? row.source}
+              </span>
+              <span className="tnum text-[12.5px] font-medium">
+                {row.docs} / {row.calls}
+              </span>
+            </div>
+          ))}
+        </Card>
+      ) : null}
+
+      <p className="mt-2 px-1 text-[12px] leading-relaxed text-dim">
+        Счётчик живёт в памяти вкладки и в базу ничего не пишет. Кэш бесплатен и мгновенен,
+        поэтому смотреть надо на первую строку: при обычном открытии там должен быть ноль.
+      </p>
     </>
   );
 }

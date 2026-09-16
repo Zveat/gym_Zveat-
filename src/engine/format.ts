@@ -158,6 +158,8 @@ export const WORDS = {
   workout: ['тренировка', 'тренировки', 'тренировок'] as const,
   rep: ['повторение', 'повторения', 'повторений'] as const,
   record: ['рекорд', 'рекорда', 'рекордов'] as const,
+  document: ['документ', 'документа', 'документов'] as const,
+  request: ['обращение', 'обращения', 'обращений'] as const,
 };
 
 /** `pluralize(4, ...WORDS.set)` reads badly at call sites; this does not. */

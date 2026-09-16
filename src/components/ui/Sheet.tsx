@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Button, CloseIcon, cx } from './primitives';
+import { TextInput } from './inputs';
 
 /**
  * Bottom sheet — the app's main way of showing detail without leaving the
@@ -92,6 +93,15 @@ export function ConfirmDialog({
   confirmLabel = 'Подтвердить',
   cancelLabel = 'Отмена',
   danger,
+  /**
+   * Для безвозвратного: требует напечатать это слово.
+   *
+   * Обычное подтверждение слишком легко нажать случайно — один тап пальцем по
+   * кнопке, которая стирает всю историю тренировок без возврата. Печатать слово
+   * пальцем неудобно, и именно в этом смысл: действие не должно получаться
+   * мимоходом. Взято из titovstroy/src/ui/DangerConfirm.jsx.
+   */
+  requireWord,
   onConfirm,
   onCancel,
 }: {
@@ -101,21 +111,52 @@ export function ConfirmDialog({
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
+  requireWord?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const [typed, setTyped] = useState('');
+
+  // Поле сбрасывается на каждое открытие: иначе набранное слово осталось бы с
+  // прошлого раза и следующее удаление подтверждалось бы одним нажатием.
+  useEffect(() => {
+    if (open) setTyped('');
+  }, [open]);
+
   if (!open) return null;
+  const ready = !requireWord || typed.trim().toUpperCase() === requireWord.toUpperCase();
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-6" role="dialog" aria-modal="true">
       <button type="button" aria-label="Отмена" onClick={onCancel} className="absolute inset-0 bg-black/75" />
       <div className="anim-pop relative w-full max-w-sm rounded-[22px] border border-line bg-surface p-5">
         <h2 className="text-[16px] font-semibold">{title}</h2>
         {message ? <div className="mt-2 text-[13.5px] leading-relaxed text-dim">{message}</div> : null}
+        {requireWord ? (
+          <div className="mt-4">
+            <p className="text-center text-[12px] text-dim">
+              Чтобы подтвердить, напечатайте{' '}
+              <b className="font-semibold text-pain">{requireWord}</b>
+            </p>
+            <TextInput
+              autoFocus
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              aria-label={`Напечатайте ${requireWord}`}
+              className="mt-2 text-center font-semibold tracking-[0.08em]"
+            />
+          </div>
+        ) : null}
         <div className="mt-5 flex gap-2">
           <Button full onClick={onCancel}>
             {cancelLabel}
           </Button>
-          <Button full variant={danger ? 'danger' : 'primary'} onClick={onConfirm}>
+          <Button
+            full
+            variant={danger ? 'danger' : 'primary'}
+            disabled={!ready}
+            onClick={onConfirm}
+          >
             {confirmLabel}
           </Button>
         </div>

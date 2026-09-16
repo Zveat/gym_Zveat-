@@ -25,6 +25,7 @@ import {
   type PersistenceAdapter,
 } from './db';
 import { getFirebaseApp } from './firebase-app';
+import { noteRead } from './read-meter';
 
 /**
  * Firestore backend.
@@ -84,11 +85,20 @@ export class FirestoreAdapter implements PersistenceAdapter {
   /** A cache read that reports a miss as `null` instead of throwing. */
   private async fromCache(name: string): Promise<QuerySnapshot<DocumentData> | null> {
     try {
-      return await getDocsFromCache(this.path(name));
+      const snapshot = await getDocsFromCache(this.path(name));
+      noteRead(name, 'cache', snapshot.size);
+      return snapshot;
     } catch {
       // No cache yet (first run on this device, or storage unavailable).
       return null;
     }
+  }
+
+  /** Чтение с сервера — единственное, за которое платим. Всегда через счётчик. */
+  private async fromServer(name: string): Promise<QuerySnapshot<DocumentData>> {
+    const snapshot = await getDocs(this.path(name));
+    noteRead(name, 'server', snapshot.size);
+    return snapshot;
   }
 
   /**
@@ -121,7 +131,7 @@ export class FirestoreAdapter implements PersistenceAdapter {
           const cached = await this.fromCache(name);
           if (cached) return [name, cached];
         }
-        return [name, await getDocs(this.path(name))];
+        return [name, await this.fromServer(name)];
       }),
     );
   }
@@ -210,6 +220,10 @@ export class FirestoreAdapter implements PersistenceAdapter {
       (snapshot) => {
         const upserted: { id: string }[] = [];
         const removed: string[] = [];
+
+        // Подписка тоже читает документы и тоже за деньги, поэтому идёт в
+        // счётчик — иначе «ноль чтений» после запуска было бы неправдой.
+        noteRead(collectionName, 'watch', snapshot.docChanges().length);
 
         for (const change of snapshot.docChanges()) {
           // A document still being written locally is already in memory.
