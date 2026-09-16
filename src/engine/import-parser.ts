@@ -92,6 +92,7 @@ export function matchExercise(
     const score = Math.max(
       scoreMatch(raw, exercise.name),
       exercise.alias ? scoreMatch(raw, exercise.alias) : 0,
+      ...(exercise.aliases ?? []).map((a) => scoreMatch(raw, a)),
     );
     if (!best || score > best.score) best = { exercise, score };
   }
@@ -451,11 +452,24 @@ export function parseWorkoutCsv(
 
   const delimiter = (lines[0].match(/;/g)?.length ?? 0) > (lines[0].match(/,/g)?.length ?? 0) ? ';' : ',';
   const header = splitCsvLine(lines[0], delimiter).map((h) => normalizeName(h));
-  const col = (...names: string[]) => header.findIndex((h) => names.includes(h));
+
+  /**
+   * Заголовок распознаётся по ПЕРВОМУ слову, а не целиком.
+   *
+   * Настоящая выгрузка называет колонку «Вес, кг», а не «Вес». При сравнении
+   * целиком это не совпадало ни с чем, колонка считалась отсутствующей, и
+   * импорт молча записывал все подходы БЕЗ веса — 516 штук, и увидеть это можно
+   * было только открыв историю потом. Первое слово совпадает и у «Вес», и у
+   * «Вес, кг», и у «Weight (kg)», а ложных совпадений не даёт: у «повторения»
+   * первое слово не «повт».
+   */
+  const col = (...names: string[]) =>
+    header.findIndex((h) => names.some((n) => h === n || h.split(' ')[0] === n));
 
   const idx = {
     date: col('date', 'дата'),
-    workout: col('workout', 'day', 'тренировка', 'день'),
+    // «Программа» — так называет эту колонку выгрузка из прежнего приложения.
+    workout: col('workout', 'day', 'тренировка', 'день', 'программа', 'program'),
     exercise: col('exercise', 'упражнение'),
     weight: col('weight', 'вес'),
     reps: col('reps', 'повторения', 'повт'),

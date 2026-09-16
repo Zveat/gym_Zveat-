@@ -55,6 +55,13 @@ export interface Exercise {
   name: string;
   /** Optional latin/english alias — used by the import parser for matching. */
   alias?: string;
+  /**
+   * Другие названия того же упражнения — как его называли в прежних выгрузках
+   * и заметках. Нужны импорту: без них «Сведение рук в тренажере» из старого
+   * файла не находило «Разводку в тренажере» и заводило второе упражнение с
+   * той же историей, разрезанной пополам.
+   */
+  aliases?: string[];
   primaryMuscle: MuscleGroup;
   secondaryMuscles: MuscleGroup[];
   equipment: Equipment;

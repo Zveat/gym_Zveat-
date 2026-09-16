@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { LineTrend } from '@/components/charts/LineTrend';
 import { Sheet } from '@/components/ui/Sheet';
 import { TextArea } from '@/components/ui/inputs';
@@ -65,6 +65,17 @@ export function ExerciseDetailsSheet({
 }) {
   const [tab, setTab] = useState<DetailTab>(initialTab);
   const exercise = useExercise(exerciseId);
+
+  /**
+   * `useState(initialTab)` берёт значение ТОЛЬКО при первом монтировании, а шит
+   * остаётся смонтированным между открытиями (закрытый он рисует null). Из-за
+   * этого тап по «Прошлый раз» и «Рекорд» открывал вкладку «Техника» — ту, что
+   * стояла при первом открытии, — и посмотреть историю прямо из подхода было
+   * нельзя. Синхронизируем на каждое открытие.
+   */
+  useEffect(() => {
+    if (open) setTab(initialTab);
+  }, [open, initialTab]);
 
   return (
     <Sheet open={open} onClose={onClose} title={exercise?.name ?? 'Упражнение'} size="full">

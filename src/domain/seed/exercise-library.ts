@@ -9,6 +9,12 @@ interface SeedExercise {
   id: string;
   name: string;
   alias?: string;
+  /**
+   * Названия того же упражнения из прежних выгрузок. Без них импорт заводил
+   * второе упражнение с той же историей: «Сведение рук в тренажере» из старого
+   * файла не находило «Разводку в тренажере».
+   */
+  aliases?: string[];
   primaryMuscle: MuscleGroup;
   secondaryMuscles?: MuscleGroup[];
   equipment: Equipment;
@@ -35,6 +41,7 @@ const SEED: SeedExercise[] = [
   {
     id: 'ex_incline_db_press',
     name: 'Жим гантелей под углом 30-40°',
+    aliases: ['Жим гантелей под углом 30°'],
     alias: 'Incline Dumbbell Press',
     primaryMuscle: 'chest',
     secondaryMuscles: ['shoulders', 'triceps'],
@@ -45,6 +52,7 @@ const SEED: SeedExercise[] = [
   {
     id: 'ex_pec_deck',
     name: 'Разводка в тренажере',
+    aliases: ['Сведение рук в тренажере'],
     alias: 'Pec Deck',
     primaryMuscle: 'chest',
     equipment: 'machine',
@@ -60,6 +68,7 @@ const SEED: SeedExercise[] = [
   {
     id: 'ex_overhead_db_ext',
     name: 'Жим гантели из-за головы',
+    aliases: ['Разгибание гантели из-за головы'],
     alias: 'Overhead Dumbbell Extension',
     primaryMuscle: 'triceps',
     equipment: 'dumbbell',
@@ -69,6 +78,7 @@ const SEED: SeedExercise[] = [
   {
     id: 'ex_rope_pushdown',
     name: 'Разгибание рук на верхнем блоке с канатом',
+    aliases: ['Разгибание рук на блоке с канатом'],
     alias: 'Cable Triceps Pushdown (rope)',
     primaryMuscle: 'triceps',
     equipment: 'cable',
@@ -78,6 +88,7 @@ const SEED: SeedExercise[] = [
   {
     id: 'ex_bar_pushdown',
     name: 'Разгибание рук на верхнем блоке с прямой рукоятью',
+    aliases: ['Разгибание рук на блоке с прямой рукоятью'],
     alias: 'Cable Triceps Pushdown (bar)',
     primaryMuscle: 'triceps',
     equipment: 'cable',
@@ -98,6 +109,7 @@ const SEED: SeedExercise[] = [
   {
     id: 'ex_lat_pulldown_v',
     name: 'Тяга верхнего блока V-хватом',
+    aliases: ['Тяга верхнего блока V хватом'],
     alias: 'Lat Pulldown (V-handle)',
     primaryMuscle: 'back',
     secondaryMuscles: ['biceps'],
@@ -108,6 +120,7 @@ const SEED: SeedExercise[] = [
   {
     id: 'ex_lat_pulldown_wide',
     name: 'Тяга верхнего блока широким хватом',
+    aliases: ['Тяга верхнего блока широким хватом к груди'],
     alias: 'Wide-Grip Lat Pulldown',
     primaryMuscle: 'back',
     equipment: 'cable',
@@ -117,6 +130,7 @@ const SEED: SeedExercise[] = [
   {
     id: 'ex_seated_row_v',
     name: 'Тяга нижнего блока к поясу V-хватом',
+    aliases: ['Тяга горизонтального блока с V-образной рукоятью'],
     alias: 'Seated Cable Row (V-handle)',
     primaryMuscle: 'back',
     secondaryMuscles: ['biceps'],
@@ -127,6 +141,7 @@ const SEED: SeedExercise[] = [
   {
     id: 'ex_seated_row',
     name: 'Тяга нижнего блока к поясу',
+    aliases: ['Тяга горизонтального блока'],
     alias: 'Seated Cable Row',
     primaryMuscle: 'back',
     secondaryMuscles: ['biceps'],
@@ -137,6 +152,7 @@ const SEED: SeedExercise[] = [
   {
     id: 'ex_single_arm_row',
     name: 'Тяга одной рукой нижнего блока',
+    aliases: ['Тяга нижнего блока одной рукой'],
     alias: 'Single-Arm Cable Row',
     primaryMuscle: 'back',
     equipment: 'cable',
@@ -166,6 +182,7 @@ const SEED: SeedExercise[] = [
   {
     id: 'ex_arm_curl_machine',
     name: 'ARM CURL (тренажер)',
+    aliases: ['Сгибание рук на бицепс в тренажере'],
     alias: 'Machine Arm Curl',
     primaryMuscle: 'biceps',
     equipment: 'machine',
@@ -205,6 +222,7 @@ const SEED: SeedExercise[] = [
   {
     id: 'ex_lateral_raise',
     name: 'Подъем гантелей в стороны',
+    aliases: ['Разведения гантелей в стороны'],
     alias: 'Dumbbell Lateral Raise',
     primaryMuscle: 'shoulders',
     equipment: 'dumbbell',
@@ -224,6 +242,7 @@ const SEED: SeedExercise[] = [
   {
     id: 'ex_upright_row',
     name: 'Тяга штанги к подбородку узким хватом',
+    aliases: ['Тяга штанги к подбородку'],
     alias: 'Narrow-Grip Upright Row',
     primaryMuscle: 'shoulders',
     secondaryMuscles: ['back'],
@@ -267,6 +286,7 @@ export function buildSeedExercises(createdAt: string): Exercise[] {
     id: s.id,
     name: s.name,
     alias: s.alias,
+    ...(s.aliases ? { aliases: s.aliases } : {}),
     primaryMuscle: s.primaryMuscle,
     secondaryMuscles: s.secondaryMuscles ?? [],
     equipment: s.equipment,
