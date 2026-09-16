@@ -790,6 +790,26 @@ async function main() {
   await page.waitForSelector('text=РАЗМИНКА');
   body = await text();
   check('the workout screen shows the warm-up', has(body, 'РАЗМИНКА', '10 мин · подъём 0'), '');
+
+  /*
+   * Ширина колонки с названием и временем. Три кнопки в одной строке с
+   * текстом сжимали её до НУЛЯ: на телефоне подписи не было видно, при том
+   * что по горизонтали ничего не уезжало и проверка на переполнение молчала.
+   * Поэтому меряем ширину, а не наличие текста в разметке.
+   */
+  const cardioLabel = await page.evaluate(() => {
+    const el = [...document.querySelectorAll('p')].find(
+      (n) => n.textContent.trim() === 'РАЗМИНКА',
+    );
+    if (!el) return null;
+    const box = el.getBoundingClientRect();
+    return { width: Math.round(box.width), height: Math.round(box.height) };
+  });
+  check(
+    'its label has real width, not a column squeezed to nothing',
+    cardioLabel !== null && cardioLabel.width > 80,
+    JSON.stringify(cardioLabel),
+  );
   check('and the cool-down', has(body, 'ЗАМИНКА', '5 мин · подъём 0'), '');
   check(
     'the warm-up sits above the first exercise, the cool-down below it',
@@ -820,6 +840,50 @@ async function main() {
   check(
     'and it can be taken back — a stray tap in the gym is normal',
     (await page.locator('button:text-is("ГОТОВО")').count()) === 2,
+    '',
+  );
+
+  /*
+   * Таймер. Десять минут в тесте не ждём — проверяем то, что ломается:
+   * отсчёт пошёл, и отметка после запуска пишет РЕАЛЬНОЕ время, а не план.
+   * Сойти с дорожки на седьмой минуте и записать десять — значит испортить
+   * себе историю, и поймать это можно только здесь.
+   */
+  await page.locator('button:text-is("НАЧАТЬ")').first().click();
+  await page.waitForTimeout(400);
+  body = await text();
+  check(
+    'tapping start begins a countdown from the planned minutes',
+    /0?9:[0-5]\d/.test(body) || /10:00/.test(body),
+    body.slice(0, 120),
+  );
+  check(
+    'the reset button appears while it runs',
+    (await page.locator('button:text-is("СБРОС")').count()) === 1,
+    '',
+  );
+
+  await page.locator('button:text-is("ГОТОВО")').first().click();
+  await page.waitForTimeout(300);
+  body = await text();
+  check(
+    'stopping early records the real minutes, not the plan',
+    has(body, '1 мин · подъём 0') && !has(body, '10 мин · подъём 0'),
+    body.slice(0, 160),
+  );
+
+  await page.click('button:text-is("ОТМЕНИТЬ")');
+  await page.waitForTimeout(250);
+
+  // Сброс гасит таймер и НЕ отмечает выполненным.
+  await page.locator('button:text-is("НАЧАТЬ")').first().click();
+  await page.waitForTimeout(250);
+  await page.click('button:text-is("СБРОС")');
+  await page.waitForTimeout(250);
+  body = await text();
+  check(
+    'reset stops the clock without marking it done',
+    has(body, '10 мин · подъём 0') && (await page.locator('button:text-is("НАЧАТЬ")').count()) === 2,
     '',
   );
 

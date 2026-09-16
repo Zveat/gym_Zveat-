@@ -14,8 +14,10 @@ import {
   Eyebrow,
   SectionTitle,
   Stat,
+  TrashIcon,
   cx,
 } from '@/components/ui/primitives';
+import { ExercisePicker } from '@/components/programs/ExercisePicker';
 import { MODE_COLOR } from '@/domain/modes';
 import type { SessionExercise, WorkoutSession } from '@/domain/types';
 import {
@@ -31,6 +33,8 @@ import {
   WORDS,
 } from '@/engine/format';
 import { sessionPRSummary } from '@/engine/records';
+import { exerciseHistory } from '@/engine/history';
+import { addHistoricalExercise, addHistoricalSet, removeExerciseFromSession } from '@/engine/session';
 import { exerciseVolume, sessionVolume, sessionWorkingSetCount } from '@/engine/volume';
 import { useStore } from '@/store/useStore';
 
@@ -79,6 +83,8 @@ function SessionDetail() {
   const [draftReps, setDraftReps] = useState('');
   const [editNotes, setEditNotes] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState<SessionExercise | null>(null);
 
   if (!session) {
     return (
@@ -214,6 +220,21 @@ function SessionDetail() {
               <ExerciseSummary
                 exercise={exercise}
                 onEditSet={(setId) => openEdit(exercise.id, setId)}
+                onAddSet={() => {
+                  updateSession(session.id, (s) => addHistoricalSet(s, exercise.id));
+                  // Сразу открываем правку дописанного: он повторяет
+                  // последний, а нужен обычно другой вес.
+                  const added = exercise.sets.length;
+                  setTimeout(() => {
+                    const fresh = useStore
+                      .getState()
+                      .sessions.find((x) => x.id === session.id)
+                      ?.exercises.find((e) => e.id === exercise.id);
+                    const set = fresh?.sets[added];
+                    if (set) openEdit(exercise.id, set.id);
+                  }, 0);
+                }}
+                onRemove={() => setConfirmRemove(exercise)}
               />
             </li>
           ))}
@@ -237,6 +258,9 @@ function SessionDetail() {
       </section>
 
       <div className="mt-7 flex flex-col gap-2">
+        <Button size="md" full onClick={() => setAdding(true)}>
+          + ДОБАВИТЬ УПРАЖНЕНИЕ
+        </Button>
         <Button size="md" full onClick={() => setEditNotes(true)}>
           {session.notes ? 'ИЗМЕНИТЬ ЗАМЕТКУ' : 'ДОБАВИТЬ ЗАМЕТКУ'}
         </Button>
@@ -292,6 +316,56 @@ function SessionDetail() {
         />
       </Sheet>
 
+      {/*
+        Новое упражнение приходит с одним подходом, и он сразу открывается на
+        правку: вес и повторения знает только владелец, а подход без них —
+        мусор в истории.
+      */}
+      <ExercisePicker
+        open={adding}
+        onClose={() => setAdding(false)}
+        title="Добавить в тренировку"
+        onPick={(exercise) => {
+          /*
+           * Подставляем последний раз, когда владелец делал это упражнение.
+           * Ноль в подходе — это мусор в истории: он идёт в счётчик рабочих
+           * подходов, а объёма не даёт, и заметить его потом нечем.
+           */
+          const past = exerciseHistory(sessions, exercise.id)
+            .flatMap((h) => h.entry.sets)
+            .filter((set) => set.actual)
+            .pop();
+          const seed = past?.actual
+            ? { weight: past.actual.weight, reps: past.actual.reps }
+            : { weight: 0, reps: 12 };
+
+          updateSession(session.id, (s) => addHistoricalExercise(s, exercise, seed));
+          setAdding(false);
+          setTimeout(() => {
+            const fresh = useStore.getState().sessions.find((x) => x.id === session.id);
+            const entry = fresh?.exercises[fresh.exercises.length - 1];
+            const set = entry?.sets[0];
+            if (entry && set) openEdit(entry.id, set.id);
+          }, 0);
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirmRemove !== null}
+        title="Убрать упражнение?"
+        message={`«${confirmRemove?.name ?? ''}» и все его подходы исчезнут из этой тренировки. Программа не изменится.`}
+        confirmLabel="Убрать"
+        danger
+        onConfirm={() => {
+          const target = confirmRemove;
+          if (target) {
+            updateSession(session.id, (s) => removeExerciseFromSession(s, target.id));
+          }
+          setConfirmRemove(null);
+        }}
+        onCancel={() => setConfirmRemove(null)}
+      />
+
       <ConfirmDialog
         open={confirmDelete}
         title="Удалить тренировку?"
@@ -311,9 +385,13 @@ function SessionDetail() {
 function ExerciseSummary({
   exercise,
   onEditSet,
+  onAddSet,
+  onRemove,
 }: {
   exercise: SessionExercise;
   onEditSet: (setId: string) => void;
+  onAddSet: () => void;
+  onRemove: () => void;
 }) {
   const done = exercise.sets.filter((s) => s.actual);
 
@@ -362,9 +440,22 @@ function ExerciseSummary({
         ))}
       </ul>
 
-      <p className="tnum mt-2 border-t border-line pt-2 text-[11.5px] text-dim">
-        {count(done.length, WORDS.set)} · {formatVolume(exerciseVolume(exercise))} кг
-      </p>
+      <div className="mt-2 flex items-center gap-2 border-t border-line pt-2">
+        <p className="tnum flex-1 text-[11.5px] text-dim">
+          {count(done.length, WORDS.set)} · {formatVolume(exerciseVolume(exercise))} кг
+        </p>
+        {/*
+          Правка прошедшей тренировки: забытый подход и лишнее упражнение —
+          обычное дело, особенно после импорта. Без этих двух кнопок
+          исправить запись можно было только удалив тренировку целиком.
+        */}
+        <Button size="sm" onClick={onAddSet}>
+          + ПОДХОД
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onRemove}>
+          <TrashIcon />
+        </Button>
+      </div>
 
       {exercise.note ? (
         <p className="mt-2 text-[12.5px] leading-relaxed text-dim">{exercise.note}</p>

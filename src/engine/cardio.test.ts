@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_MODES } from '@/domain/modes';
 import { buildSeedExercises } from '@/domain/seed/exercise-library';
 import { buildSeedProgram } from '@/domain/seed/program-mass-split';
-import { buildSession, logCardio, undoCardio } from './session';
+import {
+  buildSession,
+  cardioRemainingSeconds,
+  logCardio,
+  startCardio,
+  stopCardio,
+  undoCardio,
+} from './session';
 import { formatCardio } from './format';
 
 const exercises = buildSeedExercises('2026-01-01T00:00:00.000Z');
@@ -129,5 +136,76 @@ describe('formatCardio', () => {
 
   it('без подъёма — только минуты', () => {
     expect(formatCardio({ minutes: 5, incline: null })).toBe('5 мин');
+  });
+});
+
+describe('таймер разминки', () => {
+  const t0 = new Date('2026-09-16T18:00:00.000Z').getTime();
+
+  it('запуск хранит момент окончания, а не остаток', () => {
+    // Телефон в зале блокируется и сворачивается: отсчёт тиков этого не
+    // переживает, а момент окончания переживает.
+    const s = startCardio(start(), 'warmup', t0);
+    expect(s.warmup!.endsAt).toBe(t0 + 10 * 60_000);
+    expect(s.warmup!.startedAt).toBe('2026-09-16T18:00:00.000Z');
+  });
+
+  it('остаток считается от текущего времени', () => {
+    const s = startCardio(start(), 'warmup', t0);
+    expect(cardioRemainingSeconds(s.warmup, t0)).toBe(600);
+    expect(cardioRemainingSeconds(s.warmup, t0 + 3 * 60_000)).toBe(420);
+    // Ниже нуля не уходит: «минус две минуты» ничего не значит.
+    expect(cardioRemainingSeconds(s.warmup, t0 + 20 * 60_000)).toBe(0);
+  });
+
+  it('незапущенный таймер остатка не имеет', () => {
+    expect(cardioRemainingSeconds(start().warmup, t0)).toBeNull();
+  });
+
+  it('сброс не отмечает выполненным — передумал, а не сделал', () => {
+    const s = stopCardio(startCardio(start(), 'warmup', t0), 'warmup');
+    expect(s.warmup!.endsAt).toBeNull();
+    expect(s.warmup!.startedAt).toBeNull();
+    expect(s.warmup!.actual).toBeNull();
+  });
+
+  it('после таймера пишется РЕАЛЬНОЕ время, а не план', () => {
+    // Сойти с дорожки на седьмой минуте и записать себе десять — значит
+    // испортить собственную историю.
+    const running = startCardio(start(), 'warmup', t0);
+    const early = logCardio(running, 'warmup', {}, new Date(t0 + 7 * 60_000).toISOString());
+    expect(early.warmup!.actual!.minutes).toBe(7);
+  });
+
+  it('доведённый до конца таймер даёт ровно план', () => {
+    const running = startCardio(start(), 'warmup', t0);
+    const full = logCardio(running, 'warmup', {}, new Date(t0 + 10 * 60_000).toISOString());
+    expect(full.warmup!.actual!.minutes).toBe(10);
+  });
+
+  it('минимум одна минута, даже если отметили сразу', () => {
+    const running = startCardio(start(), 'warmup', t0);
+    expect(logCardio(running, 'warmup', {}, new Date(t0 + 5_000).toISOString()).warmup!.actual!.minutes).toBe(1);
+  });
+
+  it('без таймера один тап по-прежнему пишет план', () => {
+    expect(logCardio(start(), 'warmup', {}).warmup!.actual!.minutes).toBe(10);
+  });
+
+  it('отметка гасит таймер, чтобы он не тикал под галочкой', () => {
+    const done = logCardio(startCardio(start(), 'warmup', t0), 'warmup');
+    expect(done.warmup!.endsAt).toBeNull();
+    expect(done.warmup!.startedAt).toBeNull();
+  });
+
+  it('ручная правка минут сильнее замера', () => {
+    const running = startCardio(start(), 'warmup', t0);
+    const edited = logCardio(running, 'warmup', { minutes: 15 }, new Date(t0 + 60_000).toISOString());
+    expect(edited.warmup!.actual!.minutes).toBe(15);
+  });
+
+  it('заминка работает так же', () => {
+    const s = startCardio(start(), 'cooldown', t0);
+    expect(cardioRemainingSeconds(s.cooldown, t0)).toBe(300);
   });
 });

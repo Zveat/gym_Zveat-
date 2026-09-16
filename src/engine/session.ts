@@ -8,6 +8,7 @@ import type {
   Program,
   ProgramExercise,
   SessionExercise,
+  SessionCardio,
   SessionSet,
   SessionSetPlan,
   WorkoutDay,
@@ -153,11 +154,145 @@ export function buildSession(options: BuildSessionOptions): WorkoutSession {
   };
 }
 
+/* ── Правка прошедшей тренировки ────────────────────────────────────── */
+
+/**
+ * ДОБАВИТЬ УПРАЖНЕНИЕ В ЗАПИСАННУЮ ТРЕНИРОВКУ.
+ *
+ * Отдельно от `addExerciseToSession`: та заводит ПУСТЫЕ запланированные
+ * подходы для тренировки, которая идёт. В истории пустой подход не существует
+ * — экран показывает только выполненные, и подход без факта был бы невидим.
+ * Поэтому здесь сразу один выполненный подход, а дальше он правится и
+ * доращивается как любой другой.
+ *
+ * `plan` заполняется тем же, что и факт: в истории плана уже нет, а пустой
+ * план потом выглядел бы как «подход без цели».
+ */
+export function addHistoricalExercise(
+  session: WorkoutSession,
+  exercise: Exercise,
+  input: { weight: number; reps: number },
+  at: string = nowStamp(),
+): WorkoutSession {
+  const entry: SessionExercise = {
+    id: newId('sex'),
+    exerciseId: exercise.id,
+    programExerciseId: null,
+    name: exercise.name,
+    primaryMuscle: exercise.primaryMuscle,
+    section: '',
+    sortOrder: session.exercises.length,
+    restSeconds: 90,
+    instructions: [],
+    observations: [],
+    status: 'done',
+    sets: [
+      {
+        id: newId('sset'),
+        setNumber: 1,
+        setType: 'normal',
+        plan: { weight: input.weight, repsMin: input.reps, repsMax: input.reps },
+        actual: {
+          weight: input.weight,
+          reps: input.reps,
+          difficulty: null,
+          rpe: null,
+          rir: null,
+          completedAt: at,
+        },
+      },
+    ],
+  };
+  return { ...session, exercises: [...session.exercises, entry] };
+}
+
+/**
+ * Дописать подход в упражнение записанной тренировки. По умолчанию повторяет
+ * последний выполненный: чаще всего забыли именно ещё один такой же.
+ */
+export function addHistoricalSet(
+  session: WorkoutSession,
+  exerciseEntryId: ID,
+  input?: { weight: number; reps: number },
+  at: string = nowStamp(),
+): WorkoutSession {
+  return mapExercise(session, exerciseEntryId, (ex) => {
+    const done = ex.sets.filter((set) => set.actual);
+    const last = done[done.length - 1]?.actual;
+    const weight = input?.weight ?? last?.weight ?? 0;
+    const reps = input?.reps ?? last?.reps ?? 0;
+
+    const set: SessionSet = {
+      id: newId('sset'),
+      setNumber: ex.sets.length + 1,
+      setType: 'normal',
+      plan: { weight, repsMin: reps, repsMax: reps },
+      actual: { weight, reps, difficulty: null, rpe: null, rir: null, completedAt: at },
+    };
+    return { ...ex, status: 'done', sets: [...ex.sets, set] };
+  });
+}
+
 /* ── Разминка и заминка ─────────────────────────────────────────────── */
 
 /**
- * Отметить кардио выполненным. Один тап = «как в плане», поэтому минуты и
- * подъём по умолчанию берутся из плана; правки — необязательный аргумент.
+ * Запустить таймер разминки или заминки.
+ *
+ * Хранится момент окончания, а не остаток: телефон в зале блокируется и
+ * сворачивается, а отсчёт тиков этого не переживает.
+ */
+export function startCardio(
+  session: WorkoutSession,
+  slot: 'warmup' | 'cooldown',
+  now: number = Date.now(),
+): WorkoutSession {
+  const block = session[slot];
+  if (!block) return session;
+  return {
+    ...session,
+    [slot]: {
+      ...block,
+      startedAt: new Date(now).toISOString(),
+      endsAt: now + Math.max(1, block.plan.minutes) * 60_000,
+    },
+  };
+}
+
+/** Остановить таймер, не отмечая выполненным: передумал, а не сделал. */
+export function stopCardio(
+  session: WorkoutSession,
+  slot: 'warmup' | 'cooldown',
+): WorkoutSession {
+  const block = session[slot];
+  if (!block) return session;
+  return { ...session, [slot]: { ...block, startedAt: null, endsAt: null } };
+}
+
+/** Сколько осталось, секунд. `null` — таймер не запущен. */
+export function cardioRemainingSeconds(
+  block: SessionCardio | undefined,
+  now: number = Date.now(),
+): number | null {
+  if (!block?.endsAt) return null;
+  return Math.max(0, Math.round((block.endsAt - now) / 1000));
+}
+
+/** Сколько реально прошло с запуска, минут. Минимум одна. */
+export function cardioElapsedMinutes(
+  block: SessionCardio,
+  now: number = Date.now(),
+): number {
+  if (!block.startedAt) return block.plan.minutes;
+  const started = new Date(block.startedAt).getTime();
+  return Math.max(1, Math.round((now - started) / 60_000));
+}
+
+/**
+ * Отметить кардио выполненным.
+ *
+ * Без таймера один тап = «как в плане». А если таймер ЗАПУСКАЛСЯ — пишем
+ * сколько на самом деле прошло: сойти с дорожки на седьмой минуте и записать
+ * себе десять значит испортить собственную историю.
  */
 export function logCardio(
   session: WorkoutSession,
@@ -167,12 +302,18 @@ export function logCardio(
 ): WorkoutSession {
   const block = session[slot];
   if (!block) return session;
+  const minutes =
+    input.minutes ??
+    (block.startedAt ? cardioElapsedMinutes(block, new Date(at).getTime()) : block.plan.minutes);
+
   return {
     ...session,
     [slot]: {
       ...block,
+      startedAt: null,
+      endsAt: null,
       actual: {
-        minutes: input.minutes ?? block.plan.minutes,
+        minutes,
         incline: input.incline === undefined ? block.plan.incline : input.incline,
         completedAt: at,
       },

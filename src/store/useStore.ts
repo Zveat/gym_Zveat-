@@ -96,6 +96,17 @@ interface StoreActions {
   createExercise: (input: Partial<Exercise> & { name: string }) => Exercise;
   updateExercise: (id: ID, patch: Partial<Exercise>) => void;
   deleteExercise: (id: ID) => { ok: boolean; reason?: string };
+  /**
+   * Склеить два упражнения: перенести всю историю с `fromId` на `toId` и
+   * удалить `fromId`.
+   *
+   * Дубли появляются сами: на экране импорта есть кнопка «создать», и
+   * несведённое название заводило упражнение с сырым именем и группой мышц
+   * «Другое». История одного упражнения после этого разрезана на две, рекорды
+   * считаются отдельно, а подходы уходят в «Другое» вместо спины. Починить
+   * это по одному подходу нереально — нужна одна операция.
+   */
+  mergeExercises: (fromId: ID, toId: ID) => { ok: boolean; reason?: string; moved: number };
 
   /* Programs */
   createProgram: (input: { name: string; description?: string; dayTitles?: string[] }) => Program;
@@ -144,6 +155,8 @@ interface StoreActions {
     input?: { minutes?: number; incline?: number | null },
   ) => void;
   undoCardio: (sessionId: ID, slot: 'warmup' | 'cooldown') => void;
+  startCardio: (sessionId: ID, slot: 'warmup' | 'cooldown') => void;
+  stopCardio: (sessionId: ID, slot: 'warmup' | 'cooldown') => void;
   pauseWorkoutClock: () => void;
   resumeWorkoutClock: () => void;
   resetWorkoutClock: () => void;
@@ -351,6 +364,60 @@ export const useStore = create<Store>((set, get) => ({
     if (updated) persistRecord('exercises', updated);
   },
 
+  mergeExercises(fromId, toId) {
+    if (fromId === toId) return { ok: false, reason: 'Это одно и то же упражнение.', moved: 0 };
+    const { exercises, sessions, programs } = get();
+    const target = exercises.find((e) => e.id === toId);
+    if (!target) return { ok: false, reason: 'Упражнение не найдено.', moved: 0 };
+    if (!exercises.some((e) => e.id === fromId)) {
+      return { ok: false, reason: 'Упражнение не найдено.', moved: 0 };
+    }
+    // Упражнение из программы склеивать нельзя: дальше поехал бы план, а это
+    // уже не правка истории. Сначала убрать его из программы руками.
+    if (programs.some((p) => p.days.some((d) => d.exercises.some((pe) => pe.exerciseId === fromId)))) {
+      return { ok: false, reason: 'Упражнение используется в программе.', moved: 0 };
+    }
+
+    /*
+     * Имя в сессии денормализовано специально (история не должна ломаться от
+     * переименования), поэтому при склейке его надо переписать вместе с id —
+     * иначе в истории останется старое название при новом упражнении.
+     */
+    let moved = 0;
+    const patched: WorkoutSession[] = [];
+    for (const session of sessions) {
+      let touched = false;
+      const next = {
+        ...session,
+        exercises: session.exercises.map((entry) => {
+          if (entry.exerciseId !== fromId) return entry;
+          touched = true;
+          moved += 1;
+          return {
+            ...entry,
+            exerciseId: toId,
+            name: target.name,
+            primaryMuscle: target.primaryMuscle,
+          };
+        }),
+      };
+      if (touched) patched.push(next);
+    }
+
+    if (patched.length) {
+      const byId = new Map(patched.map((x) => [x.id, x]));
+      set({ sessions: sessions.map((x) => byId.get(x.id) ?? x) });
+    }
+    set({ exercises: get().exercises.filter((e) => e.id !== fromId) });
+
+    persist(async (adapter) => {
+      if (patched.length) await adapter.putMany('sessions', patched);
+    });
+    persistRemoval('exercises', fromId);
+
+    return { ok: true, moved };
+  },
+
   deleteExercise(id) {
     const { programs, sessions } = get();
     const usedInProgram = programs.some((p) =>
@@ -546,6 +613,12 @@ export const useStore = create<Store>((set, get) => ({
   },
   undoCardio(sessionId, slot) {
     applyToSession(get, set, sessionId, (s) => engine.undoCardio(s, slot));
+  },
+  startCardio(sessionId, slot) {
+    applyToSession(get, set, sessionId, (s) => engine.startCardio(s, slot));
+  },
+  stopCardio(sessionId, slot) {
+    applyToSession(get, set, sessionId, (s) => engine.stopCardio(s, slot));
   },
 
   pauseWorkoutClock() {

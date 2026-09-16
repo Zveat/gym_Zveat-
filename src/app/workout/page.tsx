@@ -38,6 +38,8 @@ export default function ActiveWorkoutPage() {
   const discardWorkout = useStore((s) => s.discardWorkout);
   const logCardio = useStore((s) => s.logCardio);
   const undoCardio = useStore((s) => s.undoCardio);
+  const startCardio = useStore((s) => s.startCardio);
+  const stopCardio = useStore((s) => s.stopCardio);
 
   const [showFinish, setShowFinish] = useState(false);
   const [showDiscard, setShowDiscard] = useState(false);
@@ -147,6 +149,8 @@ export default function ActiveWorkoutPage() {
             <CardioCard
               slot="warmup"
               block={session.warmup}
+              onStart={() => startCardio(session.id, 'warmup')}
+              onStop={() => stopCardio(session.id, 'warmup')}
               onDone={(input) => logCardio(session.id, 'warmup', input)}
               onUndo={() => undoCardio(session.id, 'warmup')}
             />
@@ -171,6 +175,8 @@ export default function ActiveWorkoutPage() {
             <CardioCard
               slot="cooldown"
               block={session.cooldown}
+              onStart={() => startCardio(session.id, 'cooldown')}
+              onStop={() => stopCardio(session.id, 'cooldown')}
               onDone={(input) => logCardio(session.id, 'cooldown', input)}
               onUndo={() => undoCardio(session.id, 'cooldown')}
             />

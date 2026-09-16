@@ -78,6 +78,8 @@ function Review() {
   const acceptRecommendation = useStore((s) => s.acceptRecommendation);
   const logCardio = useStore((s) => s.logCardio);
   const undoCardio = useStore((s) => s.undoCardio);
+  const startCardio = useStore((s) => s.startCardio);
+  const stopCardio = useStore((s) => s.stopCardio);
 
   const session = sessions.find((s) => s.id === sessionId) ?? null;
   const recommendations = useMemo(
@@ -188,6 +190,8 @@ function Review() {
           <CardioCard
             slot="cooldown"
             block={session.cooldown}
+            onStart={() => startCardio(session.id, 'cooldown')}
+            onStop={() => stopCardio(session.id, 'cooldown')}
             onDone={(input) => logCardio(session.id, 'cooldown', input)}
             onUndo={() => undoCardio(session.id, 'cooldown')}
           />

@@ -271,6 +271,20 @@ function ExerciseForm({
   const createExercise = useStore((s) => s.createExercise);
   const updateExercise = useStore((s) => s.updateExercise);
   const deleteExercise = useStore((s) => s.deleteExercise);
+  const mergeExercises = useStore((s) => s.mergeExercises);
+  const allExercises = useStore((s) => s.exercises);
+  const sessions = useStore((s) => s.sessions);
+
+  // Склейку предлагаем только тому, что в истории есть: чистый дубль просто
+  // удаляется, и лишний опасный выбор там не нужен.
+  const usedInHistory = exercise
+    ? sessions.some((s) => s.exercises.some((e) => e.exerciseId === exercise.id))
+    : false;
+  const others = exercise
+    ? allExercises
+        .filter((e) => e.id !== exercise.id)
+        .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+    : [];
 
   const [name, setName] = useState(exercise?.name ?? '');
   const [alias, setAlias] = useState(exercise?.alias ?? '');
@@ -281,6 +295,7 @@ function ExerciseForm({
   const [keyPoints, setKeyPoints] = useState((exercise?.keyPoints ?? []).join('\n'));
   const [mediaUrl, setMediaUrl] = useState(exercise?.mediaUrl ?? '');
   const [error, setError] = useState<string | null>(null);
+  const [mergeTarget, setMergeTarget] = useState('');
 
   // The sheet is mounted per exercise, so reset when the target changes.
   const key = exercise?.id ?? 'new';
@@ -288,6 +303,7 @@ function ExerciseForm({
   if (lastKey !== key) {
     setLastKey(key);
     setName(exercise?.name ?? '');
+    setMergeTarget('');
     setAlias(exercise?.alias ?? '');
     setPrimaryMuscle(exercise?.primaryMuscle ?? 'chest');
     setSecondary(exercise?.secondaryMuscles ?? []);
@@ -424,6 +440,48 @@ function ExerciseForm({
         <PhotoField value={mediaUrl} onChange={setMediaUrl} />
 
         {error ? <Notice tone="warn">{error}</Notice> : null}
+
+        {/*
+          СКЛЕЙКА ДУБЛЕЙ.
+          Кнопка «создать» на экране импорта заводит упражнение с сырым именем
+          из файла и группой мышц «Другое». После этого история одного
+          упражнения разрезана на две, рекорды считаются отдельно, а подходы
+          уходят в «Другое» вместо спины. Удалить дубль нельзя — он в истории;
+          поэтому склейка, а не удаление.
+        */}
+        {exercise && usedInHistory ? (
+          <Field
+            label="Склеить с другим упражнением"
+            hint="Вся история этого упражнения переедет на выбранное, а это — удалится. Отменить нельзя."
+          >
+            <Select
+              value={mergeTarget}
+              onChange={(e) => setMergeTarget(e.target.value)}
+            >
+              <option value="">Не склеивать</option>
+              {others.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name}
+                </option>
+              ))}
+            </Select>
+            {mergeTarget ? (
+              <Button
+                variant="danger"
+                size="md"
+                full
+                className="mt-2"
+                onClick={() => {
+                  const outcome = mergeExercises(exercise.id, mergeTarget);
+                  if (!outcome.ok) setError(outcome.reason ?? 'Не удалось склеить.');
+                  else onClose();
+                }}
+              >
+                ПЕРЕНЕСТИ ИСТОРИЮ И СКЛЕИТЬ
+              </Button>
+            ) : null}
+          </Field>
+        ) : null}
 
         {exercise ? (
           <Button variant="danger" size="md" full onClick={remove}>

@@ -290,6 +290,15 @@ export interface ConditionCheckIn {
  */
 export interface SessionCardio {
   plan: CardioBlock;
+  /**
+   * Таймер разминки, если он запущен: МОМЕНТ окончания в epoch ms.
+   *
+   * Момент, а не остаток — по тому же правилу, что у таймера отдыха и часов
+   * тренировки: блокировка экрана и сворачивание приложения не должны сбивать
+   * счёт, а отсчёт тиков это делает.
+   */
+  endsAt?: number | null;
+  startedAt?: Timestamp | null;
   actual: {
     minutes: number;
     incline: number | null;
