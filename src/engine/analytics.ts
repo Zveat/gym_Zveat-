@@ -1,5 +1,6 @@
 import type {
   BodyWeightGoal,
+  Difficulty,
   BodyWeightLog,
   Exercise,
   ID,
@@ -8,7 +9,7 @@ import type {
 } from '@/domain/types';
 import { completedSessions, exerciseHistory, workoutStreak } from './history';
 import { personalRecords } from './records';
-import { WORDS, count } from './format';
+import { DIFFICULTY_META, WORDS, count } from './format';
 import { estimated1RM, isWorkingSet, sessionVolume, sessionWorkingSetCount, workingWeight } from './volume';
 
 /** Inclusive `[start, end]` calendar window. */
@@ -454,6 +455,39 @@ export function bodyWeightVerdict(
     headline: wantsUp ? 'Для набора мало' : 'Для сушки мало',
     detail: `${signed} ${span}. Ожидаемо ${wantsUp ? `${band.min}…${band.max}` : `${band.min}…${band.max}`} кг в неделю — вес почти стоит.`,
   };
+}
+
+/**
+ * Средняя тяжесть тренировки (§39) — по оценкам, которые человек поставил.
+ *
+ * Средним считаем RPE, а не порядковый номер варианта: между «легко» и
+ * «норма» по ощущениям два шага RPE, а между «тяжело» и «отказом» — один, и
+ * усреднение по номерам сместило бы результат в тяжёлую сторону.
+ *
+ * Возвращаем ближайшую из четырёх оценок, а не число: «средняя 8.3 RPE» в
+ * итогах ничего не говорит, «норма» говорит.
+ */
+export function averageDifficulty(session: WorkoutSession): Difficulty | null {
+  const rated = session.exercises
+    .flatMap((ex) => ex.sets)
+    .map((set) => set.actual?.difficulty)
+    .filter((d): d is Difficulty => Boolean(d));
+  if (!rated.length) return null;
+
+  const mean = rated.reduce((sum, d) => sum + DIFFICULTY_META[d].rpe, 0) / rated.length;
+  const options = Object.keys(DIFFICULTY_META) as Difficulty[];
+  return options.reduce((best, option) =>
+    Math.abs(DIFFICULTY_META[option].rpe - mean) < Math.abs(DIFFICULTY_META[best].rpe - mean)
+      ? option
+      : best,
+  );
+}
+
+/** Сколько упражнений реально сделано (пропущенные не считаются). */
+export function sessionExerciseCount(session: WorkoutSession): number {
+  return session.exercises.filter(
+    (ex) => ex.status !== 'skipped' && ex.sets.some((set) => set.actual),
+  ).length;
 }
 
 export function bodyWeightStats(logs: BodyWeightLog[], now: Date = new Date()): BodyWeightStats {

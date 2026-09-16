@@ -1,4 +1,4 @@
-import type { Difficulty, MuscleGroup, SetType, WorkoutMode } from '@/domain/types';
+import type { BodyPart, Difficulty, MuscleGroup, SetType, WorkoutMode } from '@/domain/types';
 
 /** Rounds to the nearest achievable plate/pin step. */
 export function roundToStep(value: number, step = 0.5): number {
@@ -123,6 +123,34 @@ export const DIFFICULTY_META: Record<Difficulty, { label: string; emoji: string;
   hard: { label: 'ТЯЖЕЛО', emoji: '😤', rpe: 9, rir: 1 },
   failure: { label: 'ОТКАЗ', emoji: '🔥', rpe: 10, rir: 0 },
 };
+
+/**
+ * Зоны дискомфорта. Один список на приложение: отметка ставится и из
+ * тренировки, и с отдельного экрана, а две копии разъехались бы по составу и
+ * по названиям.
+ */
+export const BODY_PART_LABEL: Record<BodyPart, string> = {
+  shoulder: 'Плечо',
+  elbow: 'Локоть',
+  knee: 'Колено',
+  back: 'Спина',
+  wrist: 'Кисть',
+  hip: 'Бедро',
+  neck: 'Шея',
+  other: 'Другое',
+};
+
+/** Порядок показа: сверху то, что в зале болит чаще. */
+export const BODY_PART_ORDER: BodyPart[] = [
+  'knee',
+  'shoulder',
+  'back',
+  'elbow',
+  'wrist',
+  'hip',
+  'neck',
+  'other',
+];
 
 export const MODE_LABEL: Record<WorkoutMode, string> = {
   normal: 'ОБЫЧНАЯ',

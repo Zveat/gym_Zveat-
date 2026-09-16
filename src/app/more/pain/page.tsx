@@ -16,19 +16,13 @@ import {
 } from '@/components/ui/primitives';
 import { todayString } from '@/domain/ids';
 import type { BodyPart } from '@/domain/types';
-import { formatRelativeDate } from '@/engine/format';
+import { BODY_PART_LABEL, BODY_PART_ORDER, formatRelativeDate } from '@/engine/format';
 import { useStore } from '@/store/useStore';
 
-const BODY_PARTS: { id: BodyPart; label: string }[] = [
-  { id: 'shoulder', label: 'Плечо' },
-  { id: 'elbow', label: 'Локоть' },
-  { id: 'knee', label: 'Колено' },
-  { id: 'back', label: 'Спина' },
-  { id: 'wrist', label: 'Кисть' },
-  { id: 'hip', label: 'Бедро' },
-  { id: 'neck', label: 'Шея' },
-  { id: 'other', label: 'Другое' },
-];
+const BODY_PARTS: { id: BodyPart; label: string }[] = BODY_PART_ORDER.map((id) => ({
+  id,
+  label: BODY_PART_LABEL[id],
+}));
 
 const PART_LABEL = Object.fromEntries(BODY_PARTS.map((p) => [p.id, p.label])) as Record<
   BodyPart,

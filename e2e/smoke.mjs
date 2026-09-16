@@ -171,6 +171,15 @@ async function main() {
     /МОЖНО ПРИБАВИТЬ|ДЕРЖИМ ВЕС|ЛУЧШЕ СНИЗИТЬ/.test(body),
   );
   check('offers accept / edit / ignore', has(body, 'ПРИНЯТЬ', 'ИЗМЕНИТЬ', 'ОСТАВИТЬ'));
+
+  // §39: итоги — это не «готово», а цифры. §44: вес тела предлагается, но не
+  // требуется — «Пропустить» должно быть рядом, иначе это уже принуждение.
+  check(
+    'the summary counts exercises, sets, volume and difficulty',
+    has(body, 'Упражнений', 'Рабочих подходов', 'Объём', 'Средняя тяжесть', 'Новых рекордов'),
+    body.slice(0, 200),
+  );
+  check('it offers body weight without insisting', has(body, 'Вес тела сегодня?', 'ПРОПУСТИТЬ'));
   const reviewUnreadable = await assertReadableText(page);
   check('the review screen is readable', reviewUnreadable === null, reviewUnreadable ?? '');
 

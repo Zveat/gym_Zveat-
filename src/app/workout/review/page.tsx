@@ -15,10 +15,12 @@ import {
   cx,
 } from '@/components/ui/primitives';
 import type { ProgressionRecommendation, Verdict } from '@/engine/progression';
-import { formatDuration, formatVolume, formatWeight } from '@/engine/format';
+import { DIFFICULTY_META, formatDuration, formatVolume, formatWeight } from '@/engine/format';
+import { averageDifficulty, sessionExerciseCount } from '@/engine/analytics';
 import { reviewSession } from '@/engine/progression';
-import { sessionPRCount } from '@/engine/records';
+import { detectPRs, personalRecords, primaryPR, sessionPRCount, type DetectedPR } from '@/engine/records';
 import { sessionVolume, sessionWorkingSetCount } from '@/engine/volume';
+import { todayString } from '@/domain/ids';
 import { useStore } from '@/store/useStore';
 
 /**
@@ -59,6 +61,59 @@ function Review() {
     [sessions, session],
   );
 
+  /**
+   * §40: достижения по именам, а не только числом. «Новых рекордов: 2» не даёт
+   * ощущения результата — «Жим ногами 72.5 × 12» даёт.
+   *
+   * Базой берём тренировки, завершённые ДО этой: рекорд считается относительно
+   * того, что было, иначе сама тренировка попадёт в собственную базу и ни один
+   * рекорд не определится.
+   */
+  const achievements = useMemo(() => {
+    if (!session) return [];
+    const before = sessions.filter(
+      (s) => s.status === 'completed' && s.id !== session.id && s.date < session.date,
+    );
+    const rows: { name: string; pr: DetectedPR }[] = [];
+    for (const entry of session.exercises) {
+      const baseline = personalRecords(before, entry.exerciseId, entry.name);
+      let best: DetectedPR | null = null;
+      for (const set of entry.sets) {
+        if (!set.actual) continue;
+        const found = primaryPR(
+          detectPRs(baseline, {
+            weight: set.actual.weight,
+            reps: set.actual.reps,
+            setType: set.setType,
+          }),
+        );
+        if (found) best = found;
+      }
+      if (best) rows.push({ name: entry.name, pr: best });
+    }
+    return rows;
+  }, [session, sessions]);
+
+  const avgDifficulty = useMemo(() => (session ? averageDifficulty(session) : null), [session]);
+
+  /**
+   * §44: вес тела предлагается, а не требуется.
+   *
+   * Только если сегодня ещё не взвешивались: иначе предложение появлялось бы
+   * после каждой тренировки и стало бы шумом. И только предложение — блок
+   * закрывается «Пропустить» и в тренировочный поток не влезает.
+   */
+  const bodyWeightLogs = useStore((st) => st.bodyWeightLogs);
+  const addBodyWeight = useStore((st) => st.addBodyWeight);
+  const today = todayString();
+  const weighedToday = bodyWeightLogs.some((log) => log.date === today);
+  const lastWeight = useMemo(
+    () => [...bodyWeightLogs].sort((a, b) => b.date.localeCompare(a.date))[0]?.weight ?? null,
+    [bodyWeightLogs],
+  );
+  const [askWeight, setAskWeight] = useState(true);
+  const [weightDraft, setWeightDraft] = useState<number | null>(null);
+
   const [handled, setHandled] = useState<Record<string, 'accepted' | 'ignored'>>({});
   const [editing, setEditing] = useState<ProgressionRecommendation | null>(null);
   const [editWeight, setEditWeight] = useState(0);
@@ -87,15 +142,78 @@ function Review() {
 
       <Card className="grid grid-cols-2 gap-y-5 p-5">
         <Stat label="Длительность" value={formatDuration(session.durationSeconds)} />
+        <Stat label="Упражнений" value={sessionExerciseCount(session)} />
         <Stat label="Рабочих подходов" value={sessionWorkingSetCount(session)} />
         <Stat label="Объём" value={formatVolume(sessionVolume(session))} unit="кг" />
+        <Stat
+          label="Средняя тяжесть"
+          value={avgDifficulty ? DIFFICULTY_META[avgDifficulty].label : '—'}
+        />
         <Stat
           label="Новых рекордов"
           value={prCount}
           tone={prCount > 0 ? 'accent' : 'default'}
-          hint={prCount > 0 ? '🔥 Новый рекорд' : undefined}
         />
       </Card>
+
+      {askWeight && !weighedToday ? (
+        <Card className="mt-5 p-4">
+          <p className="text-[14px] font-semibold">Вес тела сегодня?</p>
+          <p className="mt-1 text-[12.5px] text-dim">
+            {lastWeight !== null
+              ? `В прошлый раз ${formatWeight(lastWeight)} кг.`
+              : 'Первое взвешивание — дальше приложение само покажет динамику.'}
+          </p>
+          <div className="mt-3">
+            <BigStepper
+              label="Вес"
+              unit="кг"
+              value={weightDraft ?? lastWeight ?? 80}
+              step={0.1}
+              min={30}
+              onChange={setWeightDraft}
+            />
+          </div>
+          <div className="mt-3 flex gap-2">
+            <Button size="md" variant="ghost" className="flex-1" onClick={() => setAskWeight(false)}>
+              ПРОПУСТИТЬ
+            </Button>
+            <Button
+              size="md"
+              variant="primary"
+              className="flex-1"
+              onClick={() => {
+                addBodyWeight(weightDraft ?? lastWeight ?? 80, today);
+                setAskWeight(false);
+              }}
+            >
+              СОХРАНИТЬ
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
+      {/* §40: что именно стало рекордом — это и даёт ощущение результата. */}
+      {achievements.length ? (
+        <section className="mt-5">
+          <SectionTitle>Новые рекорды</SectionTitle>
+          <div className="mt-2 flex flex-col gap-2">
+            {achievements.map(({ name, pr }) => (
+              <Card key={name} className="flex items-baseline justify-between gap-3 p-4">
+                <div className="min-w-0">
+                  <p className="text-[10.5px] font-semibold tracking-[0.12em] text-accent uppercase">
+                    {pr.label}
+                  </p>
+                  <p className="mt-0.5 truncate text-[14.5px] font-semibold">{name}</p>
+                </div>
+                <p className="tnum shrink-0 text-[15px] font-semibold text-accent">
+                  {formatWeight(pr.weight)} × {pr.reps}
+                </p>
+              </Card>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="mt-7">
         <SectionTitle>Что дальше с весами</SectionTitle>

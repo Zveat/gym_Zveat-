@@ -24,8 +24,9 @@ import {
   RowGroup,
   cx,
 } from '@/components/ui/primitives';
-import type { Difficulty, ObservationTag, SessionExercise, SessionSet } from '@/domain/types';
-import { formatRepRange, formatWeight, MUSCLE_LABEL } from '@/engine/format';
+import { todayString } from '@/domain/ids';
+import type { BodyPart, Difficulty, ObservationTag, SessionExercise, SessionSet } from '@/domain/types';
+import { BODY_PART_LABEL, BODY_PART_ORDER, formatRepRange, formatWeight, MUSCLE_LABEL } from '@/engine/format';
 import { lastPerformance } from '@/engine/history';
 import { personalRecords } from '@/engine/records';
 import { nextSet, suggestedInput } from '@/engine/session';
@@ -48,6 +49,17 @@ import { useStore } from '@/store/useStore';
  */
 const WEIGHT_DELTAS = [-2.5, -1, 1, 2.5, 5] as const;
 const REP_DELTAS = [-1, 1, 2, 5] as const;
+
+/**
+ * Сила дискомфорта тремя вариантами вместо шкалы 1–10: между подходами шкала
+ * не заполняется, а выдумывать число за человека нельзя — числа лягут в
+ * журнал и потом будут читаться как измерения.
+ */
+const PAIN_LEVELS = [
+  { label: 'Слабая', severity: 3 },
+  { label: 'Средняя', severity: 6 },
+  { label: 'Сильная', severity: 9 },
+] as const;
 
 /** Прошлый раз одной строкой: «50 × 12 × 4» вместо списка из пяти подходов. */
 function lastSummary(history: { entry: SessionExercise }): string {
@@ -92,6 +104,7 @@ function ExerciseWorkout() {
   const toggleObservation = useStore((s) => s.toggleObservation);
   const startRest = useStore((s) => s.startRest);
   const updateSettings = useStore((s) => s.updateSettings);
+  const addPainLog = useStore((s) => s.addPainLog);
   const haptics = useHaptics();
 
   const index = session?.exercises.findIndex((e) => e.id === entryId) ?? -1;
@@ -112,6 +125,9 @@ function ExerciseWorkout() {
   const [justSaved, setJustSaved] = useState(false);
   const [showActions, setShowActions] = useState(false);
   const [confirmSkip, setConfirmSkip] = useState(false);
+  const [showPain, setShowPain] = useState(false);
+  const [painZone, setPainZone] = useState<BodyPart | null>(null);
+  const [painNote, setPainNote] = useState('');
   const [editDraft, setEditDraft] = useState('');
 
   // The target set is whichever one is next, unless the user picked another.
@@ -642,6 +658,15 @@ function ExerciseWorkout() {
             }}
           />
           <Row
+            label="Боль или дискомфорт"
+            tone={entry.observations.includes('pain') ? 'danger' : undefined}
+            value={entry.observations.includes('pain') ? 'отмечено' : undefined}
+            onClick={() => {
+              setShowActions(false);
+              setShowPain(true);
+            }}
+          />
+          <Row
             label="Прошлый результат"
             onClick={() => {
               setShowActions(false);
@@ -665,6 +690,75 @@ function ExerciseWorkout() {
             }}
           />
         </RowGroup>
+      </Sheet>
+
+      {/*
+        §25: зона в один тап, сила в один тап, комментарий по желанию.
+        Отметка идёт в ДВА места сразу: наблюдение у упражнения (его читает
+        движок прогрессии — боль перебивает закрытую цель по повторениям) и
+        запись в журнал боли с зоной, чтобы потом было видно, что и когда
+        болело. Силу спрашиваем тремя вариантами, а не шкалой 1–10: в зале
+        нужна скорость, а выдумывать за человека число нельзя.
+      */}
+      <Sheet
+        open={showPain}
+        onClose={() => setShowPain(false)}
+        title="Боль или дискомфорт"
+        subtitle={entry.name}
+      >
+        <div className="flex flex-wrap gap-1.5">
+          {BODY_PART_ORDER.map((zone) => (
+            <Chip
+              key={zone}
+              selected={painZone === zone}
+              tone="var(--status-pain)"
+              onClick={() => setPainZone(zone)}
+            >
+              {BODY_PART_LABEL[zone]}
+            </Chip>
+          ))}
+        </div>
+
+        {painZone ? (
+          <>
+            <Eyebrow className="mt-4 mb-2">Насколько сильно</Eyebrow>
+            <div className="flex gap-1.5">
+              {PAIN_LEVELS.map(({ label, severity }) => (
+                <Chip
+                  key={severity}
+                  tone="var(--status-pain)"
+                  onClick={() => {
+                    addPainLog({
+                      bodyPart: painZone,
+                      severity,
+                      date: todayString(),
+                      ...(painNote.trim() ? { notes: painNote.trim() } : {}),
+                    });
+                    if (!entry.observations.includes('pain')) toggleObservation(entry.id, 'pain');
+                    haptics('notify');
+                    setShowPain(false);
+                    setPainZone(null);
+                    setPainNote('');
+                  }}
+                >
+                  {label}
+                </Chip>
+              ))}
+            </div>
+
+            <Eyebrow className="mt-4 mb-2">Комментарий — по желанию</Eyebrow>
+            <TextArea
+              value={painNote}
+              onChange={(e) => setPainNote(e.target.value)}
+              placeholder="Например: тянет по внутренней стороне."
+              className="min-h-20"
+            />
+          </>
+        ) : (
+          <p className="mt-4 text-[12.5px] text-dim">
+            Выберите зону — дальше один тап на силу, и всё.
+          </p>
+        )}
       </Sheet>
 
       {/*
