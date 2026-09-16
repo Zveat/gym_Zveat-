@@ -1,5 +1,6 @@
 import { newId } from '../ids';
 import type {
+  CardioBlock,
   PersonalSetting,
   Program,
   ProgramExercise,
@@ -8,6 +9,15 @@ import type {
   SetType,
   WorkoutDay,
 } from '../types';
+
+/**
+ * Разминка и заминка владельца: десять минут ходьбы на дорожке до тренировки и
+ * пять минут после. Подъём 0, кроме дней с ногами — там 8.
+ */
+const WARMUP = { minutes: 10, incline: 0, note: 'Ходьба на дорожке' } as const;
+const WARMUP_LEGS = { minutes: 10, incline: 8, note: 'Ходьба на дорожке' } as const;
+const COOLDOWN = { minutes: 5, incline: 0, note: 'Ходьба на дорожке' } as const;
+
 
 /**
  * The user's real current program, preloaded on first launch so the app is
@@ -59,12 +69,16 @@ interface ExerciseSpec {
 interface DaySpec {
   name: string;
   title: string;
+  warmup?: CardioBlock;
+  cooldown?: CardioBlock;
   exercises: ExerciseSpec[];
 }
 
 const DAYS: DaySpec[] = [
   {
     name: 'DAY 1',
+    warmup: { ...WARMUP },
+    cooldown: { ...COOLDOWN },
     title: 'ГРУДЬ + ТРИЦЕПС',
     exercises: [
       {
@@ -105,6 +119,8 @@ const DAYS: DaySpec[] = [
   },
   {
     name: 'DAY 2',
+    warmup: { ...WARMUP },
+    cooldown: { ...COOLDOWN },
     title: 'СПИНА + БИЦЕПС',
     exercises: [
       {
@@ -162,6 +178,8 @@ const DAYS: DaySpec[] = [
   },
   {
     name: 'DAY 3',
+    warmup: { ...WARMUP_LEGS },
+    cooldown: { ...COOLDOWN },
     title: 'НОГИ + ПЛЕЧИ',
     exercises: [
       {
@@ -214,6 +232,8 @@ const DAYS: DaySpec[] = [
   },
   {
     name: 'DAY 4',
+    warmup: { ...WARMUP },
+    cooldown: { ...COOLDOWN },
     title: 'ГРУДЬ + СПИНА',
     exercises: [
       {
@@ -253,6 +273,8 @@ const DAYS: DaySpec[] = [
   },
   {
     name: 'DAY 5',
+    warmup: { ...WARMUP_LEGS },
+    cooldown: { ...COOLDOWN },
     title: 'ПЛЕЧИ + РУКИ + НОГИ',
     exercises: [
       {
@@ -355,6 +377,10 @@ export function buildSeedProgram(createdAt: string): Program {
     name: day.name,
     title: day.title,
     sortOrder: dayIndex,
+    // Разминка и заминка — часть дня программы, а не подходы: их не считают в
+    // объёме и не прогрессируют. Копия, чтобы правка дня не трогала константу.
+    ...(day.warmup ? { warmup: { ...day.warmup } } : {}),
+    ...(day.cooldown ? { cooldown: { ...day.cooldown } } : {}),
     exercises: day.exercises.map(buildExercise),
   }));
 

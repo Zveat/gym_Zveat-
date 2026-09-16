@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useMemo, useState } from 'react';
 import { Screen, ScreenHeader } from '@/components/layout/Screen';
+import { CardioCard } from '@/components/workout/CardioCard';
 import { Sheet } from '@/components/ui/Sheet';
 import { BigStepper } from '@/components/ui/inputs';
 import {
@@ -63,6 +64,8 @@ function Review() {
   const programs = useStore((s) => s.programs);
   const exercises = useStore((s) => s.exercises);
   const acceptRecommendation = useStore((s) => s.acceptRecommendation);
+  const logCardio = useStore((s) => s.logCardio);
+  const undoCardio = useStore((s) => s.undoCardio);
 
   const session = sessions.find((s) => s.id === sessionId) ?? null;
   const recommendations = useMemo(
@@ -150,6 +153,22 @@ function Review() {
           tone={prCount > 0 ? 'accent' : 'default'}
         />
       </Card>
+
+      {/*
+        Заминка отмечается здесь, а не на экране тренировки: ходьба идёт уже
+        ПОСЛЕ последнего подхода, когда тренировка формально завершена. Карточка
+        показывается, только пока она не отмечена, чтобы не занимать итоги.
+      */}
+      {session.cooldown && !session.cooldown.actual ? (
+        <div className="mt-5">
+          <CardioCard
+            slot="cooldown"
+            block={session.cooldown}
+            onDone={(input) => logCardio(session.id, 'cooldown', input)}
+            onUndo={() => undoCardio(session.id, 'cooldown')}
+          />
+        </div>
+      ) : null}
 
       {/* §40: что именно стало рекордом — это и даёт ощущение результата. */}
       {achievements.length ? (

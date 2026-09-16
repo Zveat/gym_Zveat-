@@ -27,6 +27,18 @@ export function formatDuration(seconds: number): string {
   return `${s} с`;
 }
 
+/**
+ * «10 мин · подъём 0» — одна строка для разминки и заминки.
+ *
+ * Подъём печатается и когда он ноль: на дорожке ноль — это осознанная
+ * настройка, которую надо выставить, а не отсутствие данных. Отсутствие — это
+ * `null`, и тогда про подъём не пишем вовсе.
+ */
+export function formatCardio(block: { minutes: number; incline: number | null }): string {
+  const minutes = `${block.minutes} мин`;
+  return block.incline === null ? minutes : `${minutes} · подъём ${block.incline}`;
+}
+
 export function formatClock(seconds: number): string {
   const s = Math.max(0, Math.round(seconds));
   const h = Math.floor(s / 3600);

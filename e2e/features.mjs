@@ -772,6 +772,131 @@ async function main() {
   const addOverflow = await assertNoHorizontalOverflow(page);
   check('/history/add fits the screen with sets filled in', addOverflow === null, addOverflow ?? '');
 
+  console.log('\nРАЗМИНКА И ЗАМИНКА');
+  // Кардио — часть тренировки, но не подходы: минуты и подъём дорожки. Главное
+  // здесь — один тап пишет ровно план, и запись доживает до перезагрузки:
+  // оптимистичное обновление показало бы «готово» и со сломанной записью.
+  await page.setViewportSize(VIEWPORTS.pro);
+  await page.goto(`${base}/`, { waitUntil: 'networkidle' });
+  if (await page.locator('a:has-text("ПРОДОЛЖИТЬ")').count()) {
+    await page.click('a:has-text("ПРОДОЛЖИТЬ")');
+  } else {
+    await page.goto(`${base}/workout/start`, { waitUntil: 'networkidle' });
+    await page.click('button:has-text("НАЧАТЬ ТРЕНИРОВКУ")');
+  }
+  await page.waitForURL(/\/workout$/);
+  await page.waitForSelector('text=РАЗМИНКА');
+  body = await text();
+  check('the workout screen shows the warm-up', has(body, 'РАЗМИНКА', '10 мин · подъём 0'), '');
+  check('and the cool-down', has(body, 'ЗАМИНКА', '5 мин · подъём 0'), '');
+  check(
+    'the warm-up sits above the first exercise, the cool-down below it',
+    body.indexOf('РАЗМИНКА') < body.indexOf('ЖИМ ШТАНГИ ЛЕЖА') &&
+      body.indexOf('ЗАМИНКА') > body.indexOf('ЖИМ ШТАНГИ ЛЕЖА'),
+    '',
+  );
+
+  // Один тап. Кнопка на карточке разминки — первая «ГОТОВО» на экране.
+  await page.locator('button:text-is("ГОТОВО")').first().click();
+  await page.waitForTimeout(250);
+  check(
+    'one tap marks it done and offers an undo',
+    (await page.locator('button:text-is("ОТМЕНИТЬ")').count()) === 1,
+    '',
+  );
+
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForSelector('text=РАЗМИНКА');
+  check(
+    'the mark survives a reload — the write really happened',
+    (await page.locator('button:text-is("ОТМЕНИТЬ")').count()) === 1,
+    '',
+  );
+
+  await page.click('button:text-is("ОТМЕНИТЬ")');
+  await page.waitForTimeout(250);
+  check(
+    'and it can be taken back — a stray tap in the gym is normal',
+    (await page.locator('button:text-is("ГОТОВО")').count()) === 2,
+    '',
+  );
+
+  // Правка минут: план остаётся прежним, меняется только эта тренировка.
+  await page.locator('button:text-is("ИЗМЕНИТЬ")').first().click();
+  await page.waitForSelector('div[role="dialog"] >> text=Минуты');
+  await page.click('div[role="dialog"] >> button[aria-label="Минус 1"] >> nth=0');
+  await page.click('button:has-text("ОТМЕТИТЬ ВЫПОЛНЕННЫМ")');
+  await page.waitForTimeout(300);
+  body = await text();
+  check('an edited warm-up records what was actually done', has(body, '9 мин · подъём 0'), '');
+
+  await page.reload({ waitUntil: 'networkidle' });
+  body = await text();
+  check('the edit survives a reload too', has(body, '9 мин · подъём 0'), '');
+
+  // Заминка идёт уже после последнего подхода, поэтому она есть и в итогах.
+  await page.click('button:has-text("ЗАВЕРШИТЬ ТРЕНИРОВКУ")');
+  await page.waitForSelector('div[role="dialog"] >> text=Завершить тренировку');
+  await page.click('div[role="dialog"] >> button:has-text("ЗАВЕРШИТЬ")');
+  await page.waitForURL(/\/workout\/review/);
+  await page.waitForSelector('text=Тренировка завершена');
+  body = await text();
+  check('the cool-down can still be marked from the summary', has(body, 'ЗАМИНКА', 'ГОТОВО'), '');
+  await page.locator('button:text-is("ГОТОВО")').first().click();
+  await page.waitForTimeout(300);
+  body = await text();
+  check(
+    'marking it there hides the card instead of leaving it half-done',
+    !has(body, 'ЗАМИНКА'),
+    body.slice(0, 80),
+  );
+
+  // И попадает в историю как факт, а не как план.
+  await page.goto(`${base}/history`, { waitUntil: 'networkidle' });
+  await page.locator('a[href^="/history/session"]').first().click();
+  await page.waitForSelector('text=Упражнения');
+  body = await text();
+  check('history shows the cardio that was actually done', has(body, 'КАРДИО', 'ЗАМИНКА · 5 мин'), '');
+
+  console.log('\nЦЕЛЬ ПО ЧИСЛУ ТРЕНИРОВОК');
+  // В прошлом приложении у цели были «плюс» и «минус», поэтому счётчик показывал
+  // число нажатий, а не тренировок. Здесь «сделано» считается из истории, и
+  // руками вводится только то, что было до приложения.
+  await page.goto(`${base}/progress`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('text=Цель');
+  if (await page.locator('button:has-text("ПОСТАВИТЬ ЦЕЛЬ")').count()) {
+    await page.click('button:has-text("ПОСТАВИТЬ ЦЕЛЬ")');
+  } else {
+    await page.click('button:text-is("Изменить")');
+  }
+  await page.waitForSelector('div[role="dialog"] >> text=Тренировок');
+  const goalFields = page.locator('div[role="dialog"] input');
+  await goalFields.nth(0).fill('100');
+  await goalFields.nth(1).fill('150');
+  await goalFields.nth(2).fill('2026-06-01');
+  await goalFields.nth(3).fill('25');
+  await goalFields.nth(4).fill('2026-09-01');
+  await page.click('div[role="dialog"] >> button:has-text("СОХРАНИТЬ")');
+  await page.waitForTimeout(400);
+  body = await text();
+  check('the goal reads as the owner set it', has(body, '100 тренировок за 150 дней'), '');
+  check('the baseline is counted', /\b25\b/.test(body) && has(body, '/ 100'), '');
+  check(
+    'progress is derived, not a tally — no plus/minus on the card',
+    (await page.locator('button:text-is("+")').count()) === 0 &&
+      (await page.locator('button:text-is("−")').count()) === 0,
+    '',
+  );
+
+  await page.reload({ waitUntil: 'networkidle' });
+  body = await text();
+  check('the goal survives a reload', has(body, '100 тренировок за 150 дней'), '');
+
+  const goalOverflow = await assertNoHorizontalOverflow(page);
+  check('/progress with a goal fits the screen', goalOverflow === null, goalOverflow ?? '');
+  const goalUnreadable = await assertReadableText(page);
+  check('/progress with a goal stays readable', goalUnreadable === null, goalUnreadable ?? '');
+
   // The spec names both iPhone Pro and Pro Max as test targets; the wider one
   // is where a `max-w` column can leave the layout looking unanchored.
   console.log('\nIPHONE PRO MAX (430×932)');

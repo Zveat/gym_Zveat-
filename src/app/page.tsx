@@ -28,6 +28,7 @@ import {
   WORDS,
 } from '@/engine/format';
 import { overviewStats, weekWindow } from '@/engine/analytics';
+import { goalStatus } from '@/engine/goal';
 import { sessionProgress } from '@/engine/session';
 import { sessionVolume, sessionWorkingSetCount } from '@/engine/volume';
 import { workoutStreak } from '@/engine/history';
@@ -56,6 +57,11 @@ export default function HomePage() {
   const now = useMemo(() => new Date(), []);
   const week = useMemo(() => overviewStats(history, weekWindow(now, 0), now), [history, now]);
   const streak = useMemo(() => workoutStreak(history, now), [history, now]);
+  const goal = useStore((s) => s.settings.workoutGoal ?? null);
+  const goalProgress = useMemo(
+    () => (goal ? goalStatus(goal, history, now) : null),
+    [goal, history, now],
+  );
   const lastWorkout = history[0] ?? null;
 
   return (
@@ -103,6 +109,30 @@ export default function HomePage() {
             ({formatRelativeDate(pain[0].date, now).toLowerCase()}). Будьте внимательнее с нагрузкой.
           </Notice>
         </div>
+      ) : null}
+
+      {/*
+        Цель одной строкой: сколько сделано, на сколько опережение или
+        отставание. Подробности — на «Прогрессе», сюда они не влезают и не
+        нужны каждый день.
+      */}
+      {goal ? (
+        <Link href="/progress" className="mt-4 block">
+          <Card className="flex items-center gap-3 p-4 active:bg-surface2">
+            <div className="min-w-0 flex-1">
+              <Eyebrow>Цель</Eyebrow>
+              <p className="tnum mt-1 text-[15px] font-semibold">
+                {goalProgress!.done} / {goalProgress!.target}
+                <span className="ml-2 text-[12.5px] font-medium text-dim">
+                  день {Math.min(goalProgress!.dayNumber, goalProgress!.totalDays)} из{' '}
+                  {goalProgress!.totalDays}
+                </span>
+              </p>
+              <ProgressBar value={goalProgress!.ratio} className="mt-2" />
+            </div>
+            <Chevron />
+          </Card>
+        </Link>
       ) : null}
 
       <section className="mt-6">

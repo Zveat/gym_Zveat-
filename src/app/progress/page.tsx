@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { BarList } from '@/components/charts/BarList';
 import { LineTrend } from '@/components/charts/LineTrend';
+import { GoalCard, GoalEmptyCard, GoalSheet } from '@/components/goal/GoalCard';
 import { Screen, ScreenHeader } from '@/components/layout/Screen';
 import {
   Card,
@@ -33,6 +34,7 @@ import {
   MUSCLE_LABEL,
   WORDS,
 } from '@/engine/format';
+import { todayString } from '@/domain/ids';
 import { useHistory } from '@/store/selectors';
 import { useStore } from '@/store/useStore';
 
@@ -44,6 +46,9 @@ export default function ProgressPage() {
   const exercises = useStore((s) => s.exercises);
   const bodyWeightLogs = useStore((s) => s.bodyWeightLogs);
   const [scope, setScope] = useState<Scope>('month');
+  const [showGoal, setShowGoal] = useState(false);
+  const goal = useStore((s) => s.settings.workoutGoal ?? null);
+  const updateSettings = useStore((s) => s.updateSettings);
 
   const now = useMemo(() => new Date(), []);
 
@@ -70,6 +75,35 @@ export default function ProgressPage() {
     return (
       <Screen>
         <ScreenHeader title="Прогресс" large />
+
+        {/*
+          Цель доступна и без истории: её ставят до первой тренировки, а не
+          после. Иначе экран «пока нет данных» прячет единственную настройку,
+          за которой сюда пришли.
+        */}
+        <div className="mb-4">
+          {goal ? (
+            <GoalCard goal={goal} sessions={history} now={now} onEdit={() => setShowGoal(true)} />
+          ) : (
+            <GoalEmptyCard onCreate={() => setShowGoal(true)} />
+          )}
+        </div>
+
+        <GoalSheet
+          open={showGoal}
+          goal={goal}
+          today={todayString()}
+          onClose={() => setShowGoal(false)}
+          onSave={(next) => {
+            updateSettings({ workoutGoal: next });
+            setShowGoal(false);
+          }}
+          onRemove={() => {
+            updateSettings({ workoutGoal: null });
+            setShowGoal(false);
+          }}
+        />
+
         <Card>
           <EmptyState
             title="Пока нет данных"
@@ -99,7 +133,24 @@ export default function ProgressPage() {
         ]}
       />
 
+      {/*
+        Цель выше сводки: в неё смотрят каждый раз, а объём по группам — раз в
+        месяц. «Сделано» здесь не кнопка: число берётся из истории.
+      */}
       <section className="mt-4">
+        {goal ? (
+          <GoalCard
+            goal={goal}
+            sessions={history}
+            now={now}
+            onEdit={() => setShowGoal(true)}
+          />
+        ) : (
+          <GoalEmptyCard onCreate={() => setShowGoal(true)} />
+        )}
+      </section>
+
+      <section className="mt-6">
         <Eyebrow className="px-1">Сводка</Eyebrow>
         <Card className="mt-2 grid grid-cols-2 gap-y-5 p-5">
           <Stat label="Тренировок" value={stats.workouts} />
@@ -181,6 +232,21 @@ export default function ProgressPage() {
           <Row label="Прогресс по упражнениям" href="/progress/exercise" />
         </RowGroup>
       </section>
+
+      <GoalSheet
+        open={showGoal}
+        goal={goal}
+        today={todayString()}
+        onClose={() => setShowGoal(false)}
+        onSave={(next) => {
+          updateSettings({ workoutGoal: next });
+          setShowGoal(false);
+        }}
+        onRemove={() => {
+          updateSettings({ workoutGoal: null });
+          setShowGoal(false);
+        }}
+      />
     </Screen>
   );
 }

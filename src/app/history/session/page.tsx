@@ -22,6 +22,7 @@ import {
   count,
   DIFFICULTY_META,
   formatDateShort,
+  formatCardio,
   formatDuration,
   formatVolume,
   formatWeight,
@@ -168,6 +169,27 @@ function SessionDetail() {
         <p className="mt-3 px-1 text-[12px] text-dim">
           Тренировка внесена вручную (импорт). Длительность не записана.
         </p>
+      ) : null}
+
+      {/* Факт, а не план: в истории показываем только то, что реально сделано. */}
+      {session.warmup?.actual || session.cooldown?.actual ? (
+        <Card className="mt-4 p-4">
+          <Eyebrow>Кардио</Eyebrow>
+          <div className="mt-1.5 flex flex-col gap-1">
+            {session.warmup?.actual ? (
+              <p className="tnum text-[13.5px]">
+                <span className="text-dim">Разминка · </span>
+                {formatCardio(session.warmup.actual)}
+              </p>
+            ) : null}
+            {session.cooldown?.actual ? (
+              <p className="tnum text-[13.5px]">
+                <span className="text-dim">Заминка · </span>
+                {formatCardio(session.cooldown.actual)}
+              </p>
+            ) : null}
+          </div>
+        </Card>
       ) : null}
 
       {session.checkIn ? <CheckInCard checkIn={session.checkIn} /> : null}

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { CardioCard } from '@/components/workout/CardioCard';
 import { ExerciseListCard } from '@/components/workout/ExerciseListCard';
 import { WorkoutClockButton, WorkoutClockSheet } from '@/components/workout/WorkoutClock';
 import { ConfirmDialog, Sheet } from '@/components/ui/Sheet';
@@ -35,6 +36,8 @@ export default function ActiveWorkoutPage() {
   const changeWorkoutMode = useStore((s) => s.changeWorkoutMode);
   const settings = useStore((s) => s.settings);
   const discardWorkout = useStore((s) => s.discardWorkout);
+  const logCardio = useStore((s) => s.logCardio);
+  const undoCardio = useStore((s) => s.undoCardio);
 
   const [showFinish, setShowFinish] = useState(false);
   const [showDiscard, setShowDiscard] = useState(false);
@@ -135,6 +138,21 @@ export default function ActiveWorkoutPage() {
         className="mx-auto w-full max-w-lg px-4 pt-4"
         style={{ paddingBottom: 'calc(var(--safe-bottom) + 108px)' }}
       >
+        {/*
+          Разминка стоит ДО списка, заминка — ПОСЛЕ: порядок на экране совпадает
+          с порядком в зале, иначе карточку приходится искать.
+        */}
+        {session.warmup ? (
+          <div className="mb-2.5">
+            <CardioCard
+              slot="warmup"
+              block={session.warmup}
+              onDone={(input) => logCardio(session.id, 'warmup', input)}
+              onUndo={() => undoCardio(session.id, 'warmup')}
+            />
+          </div>
+        ) : null}
+
         <ul className="flex flex-col gap-2.5">
           {session.exercises.map((exercise, index) => (
             <li key={exercise.id} ref={exercise.id === currentId ? currentRef : undefined}>
@@ -147,6 +165,17 @@ export default function ActiveWorkoutPage() {
             </li>
           ))}
         </ul>
+
+        {session.cooldown ? (
+          <div className="mt-2.5">
+            <CardioCard
+              slot="cooldown"
+              block={session.cooldown}
+              onDone={(input) => logCardio(session.id, 'cooldown', input)}
+              onUndo={() => undoCardio(session.id, 'cooldown')}
+            />
+          </div>
+        ) : null}
 
         <div className="mt-5 flex flex-col gap-2">
           <Button size="md" full onClick={() => setShowAdd(true)}>

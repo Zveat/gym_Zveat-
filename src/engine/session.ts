@@ -145,8 +145,49 @@ export function buildSession(options: BuildSessionOptions): WorkoutSession {
     modeSnapshot: modeConfig,
     status: 'active',
     isImported,
+    // Снимок так же, как у подходов: правка разминки в программе не должна
+    // менять то, что человек уже прошёл в этой тренировке.
+    ...(day.warmup ? { warmup: { plan: { ...day.warmup }, actual: null } } : {}),
+    ...(day.cooldown ? { cooldown: { plan: { ...day.cooldown }, actual: null } } : {}),
     exercises: sessionExercises,
   };
+}
+
+/* ── Разминка и заминка ─────────────────────────────────────────────── */
+
+/**
+ * Отметить кардио выполненным. Один тап = «как в плане», поэтому минуты и
+ * подъём по умолчанию берутся из плана; правки — необязательный аргумент.
+ */
+export function logCardio(
+  session: WorkoutSession,
+  slot: 'warmup' | 'cooldown',
+  input: { minutes?: number; incline?: number | null } = {},
+  at: string = nowStamp(),
+): WorkoutSession {
+  const block = session[slot];
+  if (!block) return session;
+  return {
+    ...session,
+    [slot]: {
+      ...block,
+      actual: {
+        minutes: input.minutes ?? block.plan.minutes,
+        incline: input.incline === undefined ? block.plan.incline : input.incline,
+        completedAt: at,
+      },
+    },
+  };
+}
+
+/** Снять отметку. Тап мимо — обычное дело, откат обязателен. */
+export function undoCardio(
+  session: WorkoutSession,
+  slot: 'warmup' | 'cooldown',
+): WorkoutSession {
+  const block = session[slot];
+  if (!block || !block.actual) return session;
+  return { ...session, [slot]: { ...block, actual: null } };
 }
 
 /* ── Mutating a live session (pure: returns a new session) ──────────── */

@@ -3,7 +3,14 @@ import type { DatabaseSnapshot, Settings } from '../types';
 import { buildSeedExercises } from './exercise-library';
 import { buildSeedProgram } from './program-mass-split';
 
-export const SEED_VERSION = 1;
+/**
+ * Версия засева. Поднимается ВСЯКИЙ РАЗ, когда в программу добавляется что-то
+ * новое: у заведённой базы засев уже не сработает, и догоняет её только шаг из
+ * `migrations.ts`, а запускается он по этому номеру.
+ *
+ * 2 — разминка и заминка у дня.
+ */
+export const SEED_VERSION = 2;
 
 export function defaultSettings(activeProgramId: string | null): Settings {
   return {

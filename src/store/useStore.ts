@@ -4,6 +4,11 @@ import { create } from 'zustand';
 import { newId, nowStamp, todayString } from '@/domain/ids';
 import { DEFAULT_MODES } from '@/domain/modes';
 import { buildSeedSnapshot, defaultSettings, SEED_VERSION } from '@/domain/seed';
+import {
+  backfillCardio,
+  initialWorkoutGoal,
+  needsWorkoutGoal,
+} from '@/domain/seed/migrations';
 import type {
   BodyWeightLog,
   ConditionCheckIn,
@@ -132,6 +137,17 @@ interface StoreActions {
    */
   changeWorkoutMode: (mode: WorkoutMode) => void;
   /** Часы тренировки: пауза, продолжение, обнуление. Подходы не трогают. */
+  /**
+   * По id тренировки, а не «в активную»: заминку отмечают ПОСЛЕ завершения —
+   * человек дожимает последний подход, тапает «Завершить» и идёт на дорожку.
+   * К этому моменту активной тренировки уже нет.
+   */
+  logCardio: (
+    sessionId: ID,
+    slot: 'warmup' | 'cooldown',
+    input?: { minutes?: number; incline?: number | null },
+  ) => void;
+  undoCardio: (sessionId: ID, slot: 'warmup' | 'cooldown') => void;
   pauseWorkoutClock: () => void;
   resumeWorkoutClock: () => void;
   resetWorkoutClock: () => void;
@@ -522,6 +538,13 @@ export const useStore = create<Store>((set, get) => ({
         programs.find((p) => p.id === session.programId) ?? null,
       ),
     );
+  },
+
+  logCardio(sessionId, slot, input) {
+    applyToSession(get, set, sessionId, (s) => engine.logCardio(s, slot, input));
+  },
+  undoCardio(sessionId, slot) {
+    applyToSession(get, set, sessionId, (s) => engine.undoCardio(s, slot));
   },
 
   pauseWorkoutClock() {
@@ -1033,6 +1056,41 @@ async function loadFrom(
     }
   }
 
+  /**
+   * Дозасев того, что появилось в программе после первого запуска.
+   *
+   * Заведённая база засев больше не увидит никогда, поэтому новое поле у дня
+   * доезжает только так. Пишем ТОЛЬКО когда есть что менять: `backfillCardio`
+   * отдаёт `null`, если всё на месте, иначе запись уходила бы при каждом
+   * открытии приложения и дёргала подписку.
+   */
+  if ((storedSettings?.seedVersion ?? 0) < SEED_VERSION) {
+    const patched = programs
+      .map((program) => backfillCardio(program))
+      .filter((program): program is Program => program !== null);
+
+    if (patched.length) {
+      const byId = new Map(patched.map((p) => [p.id, p]));
+      programs = programs.map((p) => byId.get(p.id) ?? p);
+    }
+
+    storedSettings = {
+      ...storedSettings,
+      ...(needsWorkoutGoal(storedSettings?.workoutGoal)
+        ? { workoutGoal: initialWorkoutGoal(todayString()) }
+        : {}),
+      seedVersion: SEED_VERSION,
+    } as Settings;
+
+    try {
+      if (patched.length) await adapter.putMany('programs', patched);
+      await adapter.setKV(KV_SETTINGS, storedSettings);
+    } catch (error) {
+      // Не блокирует запуск: не доехало — доедет при следующем открытии.
+      console.error('[gym-os] не удалось дозасеять программу', error);
+    }
+  }
+
   const settings: Settings = {
     ...defaultSettings(programs.find((p) => p.status === 'active')?.id ?? null),
     ...storedSettings,
@@ -1109,6 +1167,20 @@ function startWatches(
 }
 
 /** Applies an engine function to the live session and persists the result. */
+function applyToSession(
+  get: () => Store,
+  set: (partial: Partial<StoreState>) => void,
+  sessionId: ID,
+  fn: (session: WorkoutSession) => WorkoutSession,
+) {
+  const { sessions } = get();
+  const target = sessions.find((s) => s.id === sessionId);
+  if (!target) return;
+  const next = fn(target);
+  set({ sessions: sessions.map((s) => (s.id === sessionId ? next : s)) });
+  persistRecord('sessions', next);
+}
+
 function applyToActive(
   get: () => Store,
   set: (partial: Partial<StoreState>) => void,

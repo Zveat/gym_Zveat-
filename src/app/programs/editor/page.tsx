@@ -1,12 +1,12 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
-import { Suspense, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { ExercisePicker } from '@/components/programs/ExercisePicker';
 import { ProgramExerciseEditor } from '@/components/programs/ProgramExerciseEditor';
 import { Screen, ScreenHeader } from '@/components/layout/Screen';
 import { ConfirmDialog, Sheet } from '@/components/ui/Sheet';
-import { Field, TextArea, TextInput } from '@/components/ui/inputs';
+import { BigStepper, Field, TextArea, TextInput } from '@/components/ui/inputs';
 import {
   Badge,
   Button,
@@ -18,9 +18,10 @@ import {
   cx,
 } from '@/components/ui/primitives';
 import { newId } from '@/domain/ids';
-import type { Exercise, Program, ProgramExercise, WorkoutDay } from '@/domain/types';
+import type { CardioBlock, Exercise, Program, ProgramExercise, WorkoutDay } from '@/domain/types';
 import {
   count,
+  formatCardio,
   formatRepRange,
   formatWeight,
   WORDS,
@@ -67,6 +68,7 @@ function ProgramEditor() {
   const [editingExerciseId, setEditingExerciseId] = useState<string | null>(null);
   const [addingExercise, setAddingExercise] = useState(false);
   const [confirmRemoveDay, setConfirmRemoveDay] = useState(false);
+  const [editingCardio, setEditingCardio] = useState<'warmup' | 'cooldown' | null>(null);
 
   const days = useMemo(
     () => (program ? [...program.days].sort((a, b) => a.sortOrder - b.sortOrder) : []),
@@ -270,6 +272,35 @@ function ProgramEditor() {
             </div>
           </Card>
 
+          {/*
+            Разминка и заминка лежат у дня, а не у упражнения: на дорожке нет
+            веса и повторений, а подъём и минуты у дня ног свои.
+          */}
+          <section className="mt-6">
+            <SectionTitle>До и после</SectionTitle>
+            <div className="mt-2 flex flex-col gap-2">
+              {(['warmup', 'cooldown'] as const).map((slot) => (
+                <button
+                  key={slot}
+                  type="button"
+                  onClick={() => setEditingCardio(slot)}
+                  className="flex items-center gap-3 rounded-[var(--radius-tile)] border border-line bg-surface p-3.5 text-left active:bg-surface2"
+                >
+                  <div className="min-w-0 flex-1">
+                    <Eyebrow>{slot === 'warmup' ? 'Разминка' : 'Заминка'}</Eyebrow>
+                    <p className="tnum mt-0.5 text-[14.5px] font-semibold">
+                      {day[slot] ? formatCardio(day[slot]!) : 'Нет'}
+                    </p>
+                    {day[slot]?.note ? (
+                      <p className="truncate text-[12px] text-dim">{day[slot]!.note}</p>
+                    ) : null}
+                  </div>
+                  <Chevron />
+                </button>
+              ))}
+            </div>
+          </section>
+
           <section className="mt-6">
             <SectionTitle
               action={
@@ -378,6 +409,25 @@ function ProgramEditor() {
         </div>
       </Sheet>
 
+      {day ? (
+        <DayCardioSheet
+          slot={editingCardio}
+          block={editingCardio ? (day[editingCardio] ?? null) : null}
+          onClose={() => setEditingCardio(null)}
+          onSave={(block) => {
+            const slot = editingCardio;
+            if (!slot) return;
+            updateDay(day.id, (d) => {
+              const next = { ...d };
+              if (block) next[slot] = block;
+              else delete next[slot];
+              return next;
+            });
+            setEditingCardio(null);
+          }}
+        />
+      ) : null}
+
       <ConfirmDialog
         open={confirmRemoveDay}
         title="Удалить день?"
@@ -388,6 +438,65 @@ function ProgramEditor() {
         onCancel={() => setConfirmRemoveDay(false)}
       />
     </Screen>
+  );
+}
+
+/**
+ * Правка разминки или заминки дня. Ноль подъёма — это значение, а не «не
+ * задано», поэтому убрать блок можно только кнопкой, а не выставив нули.
+ */
+function DayCardioSheet({
+  slot,
+  block,
+  onClose,
+  onSave,
+}: {
+  slot: 'warmup' | 'cooldown' | null;
+  block: CardioBlock | null;
+  onClose: () => void;
+  onSave: (block: CardioBlock | null) => void;
+}) {
+  const [minutes, setMinutes] = useState(10);
+  const [incline, setIncline] = useState(0);
+
+  // Пропсы читаются на открытие: шит живёт между открытиями, и без этого
+  // «Заминка» показала бы значения «Разминки».
+  useEffect(() => {
+    if (!slot) return;
+    setMinutes(block?.minutes ?? (slot === 'warmup' ? 10 : 5));
+    setIncline(block?.incline ?? 0);
+  }, [slot, block?.minutes, block?.incline]);
+
+  return (
+    <Sheet
+      open={slot !== null}
+      onClose={onClose}
+      title={slot === 'cooldown' ? 'Заминка' : 'Разминка'}
+    >
+      <div className="flex flex-col gap-5">
+        <BigStepper label="Минуты" value={minutes} unit="мин" step={1} min={1} max={120} onChange={setMinutes} />
+        <BigStepper label="Подъём" value={incline} unit="%" step={1} min={0} max={20} onChange={setIncline} />
+      </div>
+
+      <div className="mt-5 flex flex-col gap-2">
+        <Button
+          variant="primary"
+          size="lg"
+          full
+          onClick={() => onSave({ minutes, incline, note: 'Ходьба на дорожке' })}
+        >
+          СОХРАНИТЬ
+        </Button>
+        {block ? (
+          <Button size="md" variant="ghost" full onClick={() => onSave(null)}>
+            УБРАТЬ ИЗ ДНЯ
+          </Button>
+        ) : null}
+      </div>
+      <p className="mt-3 px-1 text-[11.5px] leading-relaxed text-dim">
+        Меняется только план на будущее. Прошлые тренировки остаются как были.
+      </p>
+    </Sheet>
   );
 }
 

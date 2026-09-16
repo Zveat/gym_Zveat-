@@ -136,6 +136,39 @@ export interface ProgramExercise {
   sets: ProgramSet[];
 }
 
+/**
+ * Разминка и заминка — кардио, а не подходы.
+ *
+ * Отдельным типом, а не упражнением с подходами: здесь меряют минуты и подъём
+ * дорожки, а не вес на повторения. Втискивать это в `SessionSet` значило бы
+ * положить минуты в поле веса и потом объяснять каждому расчёту объёма, почему
+ * их не надо складывать с килограммами.
+ */
+/**
+ * Цель вида «100 тренировок за 150 дней».
+ *
+ * Прогресс НЕ хранится: он считается из истории (`engine/goal.ts`). Руками
+ * вводится только `baseline` — то, что было сделано до приложения.
+ */
+export interface WorkoutCountGoal {
+  /** Сколько тренировок. */
+  target: number;
+  /** За сколько дней. День 1 — сам `startDate`. */
+  days: number;
+  startDate: DateString;
+  /** Сделано до приложения — всё, что раньше `countFrom`. */
+  baseline: number;
+  /** С какой даты цель считает тренировки из истории. */
+  countFrom: DateString;
+}
+
+export interface CardioBlock {
+  minutes: number;
+  /** Подъём дорожки в процентах. `null` — не про эту тренировку. */
+  incline: number | null;
+  note?: string;
+}
+
 export interface WorkoutDay {
   id: ID;
   /** Short label, e.g. "DAY 1". */
@@ -144,6 +177,9 @@ export interface WorkoutDay {
   title: string;
   description?: string;
   sortOrder: number;
+  /** Что сделать до и после. Часть программы, поэтому лежит у дня. */
+  warmup?: CardioBlock;
+  cooldown?: CardioBlock;
   exercises: ProgramExercise[];
 }
 
@@ -248,6 +284,19 @@ export interface ConditionCheckIn {
   note?: string;
 }
 
+/**
+ * Разминка внутри тренировки: снимок плана плюс то, что сделано на самом деле.
+ * Та же развязка, что у подходов — правка программы не переписывает прошлое.
+ */
+export interface SessionCardio {
+  plan: CardioBlock;
+  actual: {
+    minutes: number;
+    incline: number | null;
+    completedAt: Timestamp;
+  } | null;
+}
+
 export type SessionStatus = 'active' | 'completed';
 
 export interface WorkoutSession {
@@ -269,6 +318,8 @@ export interface WorkoutSession {
    */
   clockPausedAt?: Timestamp | null;
   clockPausedMs?: number;
+  warmup?: SessionCardio;
+  cooldown?: SessionCardio;
   /** Wall-clock length, excluding nothing — measured, not summed from sets. */
   durationSeconds: number;
   mode: WorkoutMode;
@@ -340,6 +391,11 @@ export interface Settings {
    */
   autoAdvanceExercise: boolean;
   bodyWeightGoal: BodyWeightGoal;
+  /**
+   * Цель по числу тренировок. Одна, а не список: цель, которую видно на
+   * главном экране, имеет смысл только пока она одна.
+   */
+  workoutGoal?: WorkoutCountGoal | null;
   activeProgramId: ID | null;
   modes: Record<WorkoutMode, ModeConfig>;
   seedVersion: number;
