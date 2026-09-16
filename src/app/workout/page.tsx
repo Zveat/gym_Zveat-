@@ -13,7 +13,7 @@ import {
   ProgressBar,
   cx,
 } from '@/components/ui/primitives';
-import { MODE_COLOR } from '@/domain/modes';
+import { MODE_COLOR, MODE_ORDER } from '@/domain/modes';
 import { formatClock, formatVolume, MODE_LABEL, MUSCLE_LABEL } from '@/engine/format';
 import { currentExerciseId, sessionProgress, workoutElapsedSeconds } from '@/engine/session';
 import { sessionVolume } from '@/engine/volume';
@@ -35,6 +35,8 @@ export default function ActiveWorkoutPage() {
   const pauseWorkoutClock = useStore((s) => s.pauseWorkoutClock);
   const resumeWorkoutClock = useStore((s) => s.resumeWorkoutClock);
   const resetWorkoutClock = useStore((s) => s.resetWorkoutClock);
+  const changeWorkoutMode = useStore((s) => s.changeWorkoutMode);
+  const settings = useStore((s) => s.settings);
   const discardWorkout = useStore((s) => s.discardWorkout);
 
   const now = useTicker(session !== null);
@@ -43,6 +45,7 @@ export default function ActiveWorkoutPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [showClock, setShowClock] = useState(false);
+  const [showMode, setShowMode] = useState(false);
 
   const progress = useMemo(() => (session ? sessionProgress(session) : null), [session]);
   const currentId = useMemo(() => (session ? currentExerciseId(session) : null), [session]);
@@ -104,7 +107,15 @@ export default function ActiveWorkoutPage() {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className="eyebrow">{session.workoutDayName}</span>
-              <Badge color={MODE_COLOR[session.mode]}>{MODE_LABEL[session.mode]}</Badge>
+              {/* §58: режим виден всегда, тап открывает выбор. */}
+              <button
+                type="button"
+                onClick={() => setShowMode(true)}
+                aria-label="Режим тренировки"
+                className="rounded-full active:opacity-60"
+              >
+                <Badge color={MODE_COLOR[session.mode]}>{MODE_LABEL[session.mode]}</Badge>
+              </button>
             </div>
             <p className="truncate text-[15px] leading-tight font-semibold">
               {session.workoutDayTitle}
@@ -181,6 +192,44 @@ export default function ActiveWorkoutPage() {
           </Button>
         </div>
       </div>
+
+      {/*
+        §58: смена режима на ходу. Пересчитывается план только у подходов,
+        которых ещё не было — выполненные это запись о том, что человек реально
+        поднял, и режим её не переписывает.
+      */}
+      <Sheet open={showMode} onClose={() => setShowMode(false)} title="Режим тренировки">
+        <div className="flex flex-col gap-2">
+          {MODE_ORDER.map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => {
+                if (mode !== session.mode) changeWorkoutMode(mode);
+                setShowMode(false);
+              }}
+              className={cx(
+                'rounded-[var(--radius-tile)] border p-3.5 text-left active:bg-surface2',
+                mode === session.mode ? 'border-line-strong bg-surface2' : 'border-line bg-surface',
+              )}
+            >
+              <span
+                className="text-[10.5px] font-semibold tracking-[0.12em] uppercase"
+                style={{ color: MODE_COLOR[mode] }}
+              >
+                {MODE_LABEL[mode]}
+              </span>
+              <span className="mt-0.5 block text-[13px] text-dim">
+                {settings.modes[mode].description}
+              </span>
+            </button>
+          ))}
+        </div>
+        <p className="mt-3 px-1 text-[11.5px] leading-relaxed text-dim">
+          Пересчитается план только у подходов, которых ещё не было. Уже записанные останутся
+          как есть.
+        </p>
+      </Sheet>
 
       {/* Управление часами: маленький шит, а не отдельный экран (§Таймер). */}
       <Sheet open={showClock} onClose={() => setShowClock(false)} title="Часы тренировки">

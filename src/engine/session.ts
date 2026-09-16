@@ -353,6 +353,66 @@ export function resetClock(session: WorkoutSession, at: string = nowStamp()): Wo
   return { ...session, startedAt: at, clockPausedAt: null, clockPausedMs: 0 };
 }
 
+/**
+ * Сменить режим посреди тренировки (§58).
+ *
+ * ГЛАВНОЕ ОГРАНИЧЕНИЕ: выполненные подходы не меняются никогда. История хранит
+ * факт (§46), и «переключил режим — прошлые подходы стали другими» это не
+ * пересчёт, а подделка записи. Поэтому режим применяется только к тем
+ * подходам, которых ещё не было.
+ *
+ * Планы берутся из программы заново, а не пересчитываются из текущего снимка:
+ * обратное умножение на множитель режима не восстанавливает исходный вес
+ * из-за округления до шага, и после двух переключений вес уезжал бы.
+ *
+ * Если упражнения в программе больше нет (удалили, или оно добавлено на ходу)
+ * — план этого упражнения остаётся как есть. Лучше оставить прежние числа,
+ * чем выдумать новые.
+ *
+ * Количество подходов режим тоже меняет, но урезать можно только хвост из
+ * невыполненных: если «легкая» оставляет три подхода, а четыре уже сделаны —
+ * остаются все четыре.
+ */
+export function changeSessionMode(
+  session: WorkoutSession,
+  mode: WorkoutMode,
+  modeConfig: ModeConfig,
+  program: Program | null,
+  roundStep = 0.5,
+): WorkoutSession {
+  const day = program?.days.find((d) => d.id === session.workoutDayId) ?? null;
+
+  const exercises = session.exercises.map((entry) => {
+    const done = entry.sets.filter((set) => set.actual !== null);
+    const template = entry.programExerciseId
+      ? (day?.exercises.find((ex) => ex.id === entry.programExerciseId) ?? null)
+      : null;
+
+    // Нечего пересчитывать: упражнение закрыто, пропущено или не из программы.
+    if (!template || entry.status === 'skipped' || done.length === entry.sets.length) {
+      return entry;
+    }
+
+    const derived = planExerciseSets(template, modeConfig, roundStep);
+    // Хвост из невыполненных заменяем, выполненные оставляем нетронутыми.
+    const tail = derived.slice(done.length).map((row, i) => {
+      const existing = entry.sets[done.length + i];
+      return {
+        id: existing?.id ?? newId('sset'),
+        setNumber: done.length + i + 1,
+        setType: row.setType,
+        ...(row.note ? { note: row.note } : {}),
+        plan: row.plan,
+        actual: null,
+      } satisfies SessionSet;
+    });
+
+    return { ...entry, sets: [...done, ...tail] };
+  });
+
+  return { ...session, mode, modeSnapshot: modeConfig, exercises };
+}
+
 export function finishSession(
   session: WorkoutSession,
   at: string = nowStamp(),

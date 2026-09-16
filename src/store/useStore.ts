@@ -126,6 +126,11 @@ interface StoreActions {
   removeExerciseFromWorkout: (exerciseEntryId: ID) => void;
   setSessionNotes: (notes: string) => void;
   setCheckIn: (checkIn: ConditionCheckIn) => void;
+  /**
+   * §58: сменить режим посреди тренировки. Пересчитывает план только у
+   * невыполненных подходов — выполненные это запись о том, что было.
+   */
+  changeWorkoutMode: (mode: WorkoutMode) => void;
   /** Часы тренировки: пауза, продолжение, обнуление. Подходы не трогают. */
   pauseWorkoutClock: () => void;
   resumeWorkoutClock: () => void;
@@ -506,6 +511,19 @@ export const useStore = create<Store>((set, get) => ({
   removeSet(exerciseEntryId, setId) {
     applyToActive(get, set, (s) => engine.removeSet(s, exerciseEntryId, setId));
   },
+  changeWorkoutMode(mode) {
+    const { programs, settings } = get();
+    const config = settings.modes[mode];
+    applyToActive(get, set, (session) =>
+      engine.changeSessionMode(
+        session,
+        mode,
+        config,
+        programs.find((p) => p.id === session.programId) ?? null,
+      ),
+    );
+  },
+
   pauseWorkoutClock() {
     applyToActive(get, set, (s) => engine.pauseClock(s));
   },

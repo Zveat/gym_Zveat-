@@ -149,6 +149,47 @@ async function main() {
   await page.waitForTimeout(200);
   check('cancelling leaves the exercise alone', !/Вернуть в тренировку/i.test(await text()));
 
+  // §58: режим меняется на ходу, но выполненные подходы остаются как были —
+  // это главное, что здесь может сломаться.
+  //
+  // Сначала нужен ЗАПИСАННЫЙ подход, иначе проверять нечего: делаем один на
+  // весе, отличном от плана (52.5 против 50), чтобы его нельзя было спутать с
+  // пересчитанным планом.
+  //
+  // Возвращаемся к списку явно: предыдущая проверка оставила нас на экране
+  // упражнения, где ссылок на упражнения нет.
+  await page.goto(`${base}/workout`, { waitUntil: 'networkidle' });
+  await page.locator('a:has-text("Жим штанги лежа")').first().click();
+  await page.waitForURL(/\/workout\/exercise/);
+  await page.waitForSelector('button[aria-label="Плюс 2.5"]');
+  await page.click('button[aria-label="Плюс 2.5"]');
+  await page.click('button:has-text("СОХРАНИТЬ ПОДХОД")');
+  await page.waitForTimeout(400);
+  const skipRest = page.locator('button:text-is("ПРОПУСТИТЬ")');
+  if (await skipRest.count()) await skipRest.click();
+  await page.waitForTimeout(300);
+  check('a set is recorded above the planned weight', has(await text(), '52.5'), (await text()).slice(0, 140));
+
+  await page.goto(`${base}/workout`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('button[aria-label="Режим тренировки"]');
+  await page.click('button[aria-label="Режим тренировки"]');
+  await page.waitForSelector('text=Режим тренировки');
+  body = await text();
+  check('the mode sheet explains what gets recalculated', /только у подходов, которых ещё не было/i.test(body));
+
+  await page.click('div[role="dialog"] >> text=ЛЕГКАЯ');
+  await page.waitForTimeout(400);
+  body = await text();
+  check('the header shows the new mode', has(body, 'ЛЕГКАЯ'), body.slice(0, 100));
+
+  await page.locator('a:has-text("Жим штанги лежа")').first().click();
+  await page.waitForURL(/\/workout\/exercise/);
+  await page.waitForTimeout(400);
+  body = await text();
+  // Записанный подход остался, а план следующего пересчитался на 42.5.
+  check('the recorded set survives a mode change', has(body, '52.5'), body.slice(0, 220));
+  check('the pending set picks up the lighter plan', has(body, '42.5'), body.slice(0, 220));
+
   // Убираем за собой: незавершённая тренировка меняет главный экран
   // («ПРОДОЛЖИТЬ» вместо «НАЧАТЬ»), и следующие разделы падали бы на этом.
   await page.goto(`${base}/workout`, { waitUntil: 'networkidle' });
