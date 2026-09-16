@@ -7,3 +7,6 @@ dist/
 *.tsbuildinfo
 next-env.d.ts
 .DS_Store
+
+# Отпечаток сборки: пишется в prebuild, в репозитории был бы всегда устаревшим.
+public/version.json

@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Notice, Skeleton } from '@/components/ui/primitives';
 import { useStore } from '@/store/useStore';
 import { BottomNav } from './BottomNav';
+import { UpdateBanner } from './UpdateBanner';
 import { SignInScreen } from './SignInScreen';
 import { RestTimerOverlay } from '@/components/workout/RestTimerOverlay';
 import { PRCelebrationOverlay } from '@/components/workout/PRCelebration';
@@ -32,6 +33,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <>
+      <UpdateBanner />
       <SyncErrorBanner />
       {children}
       {!immersive ? <BottomNav /> : null}

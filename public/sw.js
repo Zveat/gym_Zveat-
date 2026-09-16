@@ -11,7 +11,16 @@
  * Workout data never goes through here — it lives in IndexedDB.
  */
 
-const VERSION = 'gym-os-v1';
+/**
+ * Версия кэша берётся из адреса регистрации (`/sw.js?v=<сборка>`).
+ *
+ * Браузер считает обновлением только изменившийся ФАЙЛ sw.js. Этот файл от
+ * сборки к сборке не меняется ни на байт, поэтому с постоянной версией
+ * `updatefound` не наступал никогда, а статика отдавалась из кэша прошлой
+ * сборки сколько угодно долго. Разный адрес — разный скрипт для браузера, и
+ * заодно готовое имя кэша, которое меняется вместе со сборкой.
+ */
+const VERSION = `gym-os-${new URL(self.location.href).searchParams.get('v') || 'v1'}`;
 const SHELL = ['/', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {

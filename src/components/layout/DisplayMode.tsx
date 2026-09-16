@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Notice } from '@/components/ui/primitives';
+import { LS_INSTALL_HINT_DISMISSED } from '@/data/storage-keys';
 
 /**
  * Whether the app is running as an installed app or inside a browser tab, and
@@ -75,7 +76,7 @@ export function useDisplayMode(): DisplayModeInfo | null {
   return info;
 }
 
-const DISMISSED = 'gym-os:install-hint-dismissed';
+const DISMISSED = LS_INSTALL_HINT_DISMISSED;
 
 /**
  * Shown only in a browser tab, and only when the browser is actually keeping a

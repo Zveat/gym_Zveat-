@@ -469,6 +469,43 @@ async function main() {
   const nag = await page.locator('text=панель браузера').count();
   check('no install hint when the browser takes nothing', nag === 0, `${nag} shown`);
 
+  console.log('\nTHE BUILD IT IS RUNNING IS VISIBLE AND CHECKED');
+  // On a phone the app is never reloaded — it is minimised and restored — so a
+  // deployed fix can fail to reach the user for weeks with nobody able to tell.
+  // A screenshot does not show the build either, so both sides argue blind.
+  const version = await page.evaluate(async () => {
+    const res = await fetch('/version.json', { cache: 'no-store' });
+    return res.ok ? res.json() : null;
+  });
+  check('the server publishes a build fingerprint', typeof version?.build === 'string' && version.build.length > 0, JSON.stringify(version));
+
+  await page.goto(`${base}/more/settings`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('text=Как открыто');
+  await page.waitForTimeout(300);
+  const shown = await page.evaluate(() => {
+    const heading = [...document.querySelectorAll('*')].find(
+      (el) => el.textContent.trim() === 'Как открыто' && el.children.length === 0,
+    );
+    return heading?.closest('section')?.innerText ?? '';
+  });
+  check('settings shows the build first', /Сборка/.test(shown) && shown.includes(version.build), shown.slice(0, 60));
+
+  // Matching builds must stay silent, or the banner cries wolf on every launch.
+  await page.goto(`${base}/`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(600);
+  const quiet = await page.locator('text=Есть новая версия').count();
+  check('no update banner when the builds match', quiet === 0, `${quiet} shown`);
+
+  // And it has to actually fire when the server moves on.
+  await page.route('**/version.json*', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{"build":"deadbee"}' }),
+  );
+  await page.goto(`${base}/`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('text=Есть новая версия', { timeout: 5000 }).catch(() => undefined);
+  const raised = await page.locator('text=Есть новая версия').count();
+  check('the banner appears when the server has another build', raised > 0, `${raised} shown`);
+  await page.unroute('**/version.json*');
+
   console.log('\nTHE PRIMARY BUTTON CARRIES ITS OWN COLOUR');
   await page.goto(`${base}/more/body-weight`, { waitUntil: 'networkidle' });
   await page.waitForSelector('button:has-text("ДОБАВИТЬ")');

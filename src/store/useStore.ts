@@ -38,6 +38,7 @@ import { detectPRs, personalRecords, type DetectedPR } from '@/engine/records';
 import { applyRecommendation, type ProgressionRecommendation } from '@/engine/progression';
 import * as engine from '@/engine/session';
 import type { ParsedWorkout } from '@/engine/import-parser';
+import { KV_SETTINGS as KV_SETTINGS_KEY, lsDeviceMigrated } from '@/data/storage-keys';
 
 /**
  * One store for the whole app.
@@ -164,7 +165,7 @@ interface StoreActions {
 
 export type Store = StoreState & StoreActions;
 
-const KV_SETTINGS = 'settings';
+const KV_SETTINGS = KV_SETTINGS_KEY;
 const KV_REST = 'rest';
 
 /** Fire-and-forget persistence: failures must never break a workout. */
@@ -837,7 +838,7 @@ function stopWatches() {
   watches = [];
 }
 
-const MIGRATED_KEY = (uid: string) => `gym-os:device-migrated:${uid}`;
+const MIGRATED_KEY = lsDeviceMigrated;
 
 /** One-shot marker, so a finished migration is never reconsidered. */
 function migrationSettled(uid: string): boolean {

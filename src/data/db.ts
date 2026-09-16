@@ -1,4 +1,5 @@
 import type { DatabaseSnapshot } from '@/domain/types';
+import { DB_NAME, DB_VERSION, LS_PROBE, LS_SNAPSHOT } from './storage-keys';
 
 /**
  * Storage, behind one interface.
@@ -14,8 +15,7 @@ import type { DatabaseSnapshot } from '@/domain/types';
  * still runs instead of failing in the middle of a workout.
  */
 
-export const DB_NAME = 'personal-gym-os';
-export const DB_VERSION = 1;
+export { DB_NAME, DB_VERSION } from './storage-keys';
 
 export const COLLECTIONS = [
   'exercises',
@@ -187,7 +187,7 @@ class IndexedDBAdapter implements PersistenceAdapter {
 
 /* ── localStorage fallback ─────────────────────────────────────────── */
 
-const LS_KEY = 'personal-gym-os:snapshot';
+const LS_KEY = LS_SNAPSHOT;
 
 interface LSShape {
   collections: Record<string, { id: string }[]>;
@@ -287,7 +287,7 @@ export async function getAdapter(): Promise<PersistenceAdapter> {
 
   try {
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('personal-gym-os:probe', '1');
+      localStorage.setItem(LS_PROBE, '1');
       localStorage.removeItem('personal-gym-os:probe');
       adapter = new LocalStorageAdapter('localstorage');
       return adapter;

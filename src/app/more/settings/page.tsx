@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { Screen, ScreenHeader } from '@/components/layout/Screen';
 import { useDisplayMode } from '@/components/layout/DisplayMode';
+import { BUILD_ID } from '@/engine/app-version';
 import { ConfirmDialog } from '@/components/ui/Sheet';
 import { Field, TextInput, Toggle } from '@/components/ui/inputs';
 import {
@@ -269,6 +270,9 @@ function DisplayModeCard() {
   }
 
   const rows: [string, string][] = [
+    // Сборка стоит первой строкой: по скриншоту иначе не видно, какая версия
+    // открыта, и разбор любой жалобы начинается с угадывания.
+    ['Сборка', BUILD_ID],
     ['Режим', info.standalone ? 'Как приложение' : 'В браузере'],
     ['Высота экрана', `${info.screenHeight} pt`],
     ['Высота окна', `${info.viewportHeight} pt`],
