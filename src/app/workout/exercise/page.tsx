@@ -11,7 +11,7 @@ import {
 } from '@/components/workout/ExerciseDetailsSheet';
 import { SetRow } from '@/components/workout/SetRow';
 import { Screen } from '@/components/layout/Screen';
-import { Sheet } from '@/components/ui/Sheet';
+import { ConfirmDialog, Sheet } from '@/components/ui/Sheet';
 import { BigStepper, TextArea, TextInput } from '@/components/ui/inputs';
 import {
   Badge,
@@ -20,6 +20,8 @@ import {
   Chip,
   Eyebrow,
   Notice,
+  Row,
+  RowGroup,
   cx,
 } from '@/components/ui/primitives';
 import type { Difficulty, ObservationTag, SessionExercise, SessionSet } from '@/domain/types';
@@ -108,6 +110,8 @@ function ExerciseWorkout() {
    * ли» — а следующий подход уже подставлен, и экран выглядит почти так же.
    */
   const [justSaved, setJustSaved] = useState(false);
+  const [showActions, setShowActions] = useState(false);
+  const [confirmSkip, setConfirmSkip] = useState(false);
   const [editDraft, setEditDraft] = useState('');
 
   // The target set is whichever one is next, unless the user picked another.
@@ -165,6 +169,12 @@ function ExerciseWorkout() {
   const previous = index > 0 ? session.exercises[index - 1] : null;
   const following = index < total - 1 ? session.exercises[index + 1] : null;
   const doneCount = entry.sets.filter((s) => s.actual).length;
+  /**
+   * Убрать можно только последний НЕвыполненный подход: удаление выполненного
+   * стёрло бы записанный факт, а история обязана хранить то, что было (§46).
+   */
+  const lastAddedSet =
+    entry.sets.length > 1 ? [...entry.sets].reverse().find((set) => !set.actual) ?? null : null;
   const allDone = doneCount === entry.sets.length;
 
   const save = () => {
@@ -263,6 +273,19 @@ function ExerciseWorkout() {
               Упражнение {index + 1} / {total}
             </p>
           </div>
+          {/*
+            §18: всё редкое — в одном меню, чтобы не занимать место на экране и
+            при этом быть доступным без прокрутки. Частое (дельты веса,
+            «повторить», оценка) осталось на экране рядом со счётчиками.
+          */}
+          <button
+            type="button"
+            onClick={() => setShowActions(true)}
+            aria-label="Действия с упражнением"
+            className="touch flex items-center justify-center rounded-full text-[17px] leading-none text-dim active:bg-surface2"
+          >
+            •••
+          </button>
           <button
             type="button"
             onClick={() => setDetails('technique')}
@@ -505,7 +528,12 @@ function ExerciseWorkout() {
           <Button size="md" full onClick={() => setShowNote(true)}>
             {entry.note ? 'ЗАМЕТКА К УПРАЖНЕНИЮ ✓' : 'ЗАМЕТКА К УПРАЖНЕНИЮ'}
           </Button>
-          <Button size="md" full variant="ghost" onClick={() => skipExercise(entry.id)}>
+          <Button
+            size="md"
+            full
+            variant="ghost"
+            onClick={() => (entry.status === 'skipped' ? skipExercise(entry.id) : setConfirmSkip(true))}
+          >
             {entry.status === 'skipped' ? 'ВЕРНУТЬ В ТРЕНИРОВКУ' : 'ПРОПУСТИТЬ УПРАЖНЕНИЕ'}
           </Button>
         </div>
@@ -582,6 +610,79 @@ function ExerciseWorkout() {
         exerciseId={entry.exerciseId}
         initialTab={details ?? 'technique'}
         instructions={entry.instructions}
+      />
+
+      {/* §18: одно меню на все редкие действия. */}
+      <Sheet open={showActions} onClose={() => setShowActions(false)} title={entry.name}>
+        <RowGroup>
+          <Row
+            label="Добавить подход"
+            value={`сейчас ${entry.sets.length}`}
+            onClick={() => {
+              addSet(entry.id);
+              haptics('light');
+              setShowActions(false);
+            }}
+          />
+          {lastAddedSet ? (
+            <Row
+              label="Убрать последний подход"
+              onClick={() => {
+                removeSet(entry.id, lastAddedSet.id);
+                setShowActions(false);
+              }}
+            />
+          ) : null}
+          <Row
+            label="Заметка к упражнению"
+            value={entry.note ? '✓' : undefined}
+            onClick={() => {
+              setShowActions(false);
+              setShowNote(true);
+            }}
+          />
+          <Row
+            label="Прошлый результат"
+            onClick={() => {
+              setShowActions(false);
+              setDetails('history');
+            }}
+          />
+          <Row
+            label="Техника и настройки тренажёра"
+            onClick={() => {
+              setShowActions(false);
+              setDetails('technique');
+            }}
+          />
+          <Row
+            label={entry.status === 'skipped' ? 'Вернуть в тренировку' : 'Пропустить упражнение'}
+            tone={entry.status === 'skipped' ? undefined : 'danger'}
+            onClick={() => {
+              setShowActions(false);
+              if (entry.status === 'skipped') skipExercise(entry.id);
+              else setConfirmSkip(true);
+            }}
+          />
+        </RowGroup>
+      </Sheet>
+
+      {/*
+        §23: пропуск подтверждается. Он переводит упражнение в «пропущено» и
+        пересчитывает прогресс тренировки — случайный тап по этой кнопке
+        незаметно меняет то, что уйдёт в историю.
+      */}
+      <ConfirmDialog
+        open={confirmSkip}
+        title={`Пропустить ${entry.name}?`}
+        message="Упражнение отметится как пропущенное, прогресс тренировки пересчитается. Вернуть можно там же."
+        confirmLabel="Пропустить"
+        danger
+        onConfirm={() => {
+          skipExercise(entry.id);
+          setConfirmSkip(false);
+        }}
+        onCancel={() => setConfirmSkip(false)}
       />
 
       <Sheet

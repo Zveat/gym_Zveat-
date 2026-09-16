@@ -126,6 +126,10 @@ interface StoreActions {
   removeExerciseFromWorkout: (exerciseEntryId: ID) => void;
   setSessionNotes: (notes: string) => void;
   setCheckIn: (checkIn: ConditionCheckIn) => void;
+  /** Часы тренировки: пауза, продолжение, обнуление. Подходы не трогают. */
+  pauseWorkoutClock: () => void;
+  resumeWorkoutClock: () => void;
+  resetWorkoutClock: () => void;
   finishWorkout: () => ID | null;
   discardWorkout: () => void;
 
@@ -502,6 +506,16 @@ export const useStore = create<Store>((set, get) => ({
   removeSet(exerciseEntryId, setId) {
     applyToActive(get, set, (s) => engine.removeSet(s, exerciseEntryId, setId));
   },
+  pauseWorkoutClock() {
+    applyToActive(get, set, (s) => engine.pauseClock(s));
+  },
+  resumeWorkoutClock() {
+    applyToActive(get, set, (s) => engine.resumeClock(s));
+  },
+  resetWorkoutClock() {
+    applyToActive(get, set, (s) => engine.resetClock(s));
+  },
+
   skipExercise(exerciseEntryId) {
     applyToActive(get, set, (s) => engine.skipExercise(s, exerciseEntryId));
   },

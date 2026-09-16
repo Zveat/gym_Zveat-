@@ -254,6 +254,14 @@ export interface WorkoutSession {
   date: DateString;
   startedAt: Timestamp;
   completedAt: Timestamp | null;
+  /**
+   * Часы тренировки можно остановить: подошёл человек, зазвонил телефон,
+   * очередь к тренажёру. Храним МОМЕНТ постановки на паузу и накопленную
+   * паузу, а не «оставшееся» — так же, как в таймере отдыха: блокировка
+   * экрана и сворачивание приложения не могут это рассинхронизировать.
+   */
+  clockPausedAt?: Timestamp | null;
+  clockPausedMs?: number;
   /** Wall-clock length, excluding nothing — measured, not summed from sets. */
   durationSeconds: number;
   mode: WorkoutMode;

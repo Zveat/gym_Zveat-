@@ -96,7 +96,74 @@ async function main() {
   body = await text();
   check('the plan is untouched by the workout', has(body, '50 кг × 12 × 4'));
 
+  console.log('\nWORKOUT CLOCK AND THE ACTIONS MENU');
+  // §Таймер: пауза и завершение нужны прямо из тренировки, а не с отдельного
+  // экрана. §18: редкие действия — в одном меню, чтобы не занимать экран и
+  // при этом быть доступными без прокрутки.
+  // Предыдущий раздел тренировку завершил, поэтому начинаем новую: часы и
+  // меню существуют только внутри живой тренировки.
+  await page.goto(`${base}/workout/start`, { waitUntil: 'networkidle' });
+  await page.click('button:has-text("НАЧАТЬ ТРЕНИРОВКУ")');
+  await page.waitForURL(/\/workout$/);
+  await page.waitForSelector('button[aria-label="Часы тренировки"]');
+  await page.click('button[aria-label="Часы тренировки"]');
+  await page.waitForSelector('text=Часы тренировки');
+  body = await text();
+  check('the clock opens pause / reset / finish', has(body, 'ПАУЗА', 'ОБНУЛИТЬ ЧАСЫ', 'ЗАВЕРШИТЬ ТРЕНИРОВКУ'));
+
+  await page.click('button:has-text("ПАУЗА")');
+  await page.waitForTimeout(300);
+  body = await text();
+  check('pausing is visible in the header', /пауза/i.test(body), body.slice(0, 80));
+
+  // На паузе часы стоят: два замера с интервалом дают одно и то же число.
+  const readClock = () => page.locator('button[aria-label="Часы тренировки"]').innerText();
+  const first = await readClock();
+  await page.waitForTimeout(1400);
+  check('a paused clock does not advance', (await readClock()) === first, `${first} → ${await readClock()}`);
+
+  await page.click('button[aria-label="Часы тренировки"]');
+  await page.waitForSelector('button:has-text("ПРОДОЛЖИТЬ")');
+  await page.click('button:has-text("ПРОДОЛЖИТЬ")');
+  await page.waitForTimeout(300);
+  check('resuming clears the paused marker', !/пауза/i.test(await text()));
+
+  await page.locator('a:has-text("Жим штанги лежа")').first().click();
+  await page.waitForURL(/\/workout\/exercise/);
+  await page.click('button[aria-label="Действия с упражнением"]');
+  await page.waitForTimeout(250);
+  body = await text();
+  check(
+    'the menu gathers the rare actions',
+    has(body, 'Добавить подход', 'Заметка к упражнению', 'Прошлый результат', 'Пропустить упражнение'),
+    body.slice(0, 120),
+  );
+
+  // §23: пропуск меняет то, что уйдёт в историю, поэтому подтверждается.
+  // Строго внутри шита: тот же текст есть и на самом экране под сгибом, и
+  // Playwright брал ту кнопку, перекрытую подложкой.
+  await page.click('div[role="dialog"] >> text=Пропустить упражнение');
+  await page.waitForSelector('text=Пропустить Жим штанги лежа?');
+  check('skipping asks first', true);
+  await page.click('div[role="dialog"] button:has-text("Отмена")');
+  await page.waitForTimeout(200);
+  check('cancelling leaves the exercise alone', !/Вернуть в тренировку/i.test(await text()));
+
+  // Убираем за собой: незавершённая тренировка меняет главный экран
+  // («ПРОДОЛЖИТЬ» вместо «НАЧАТЬ»), и следующие разделы падали бы на этом.
+  await page.goto(`${base}/workout`, { waitUntil: 'networkidle' });
+  await page.click('button:has-text("ОТМЕНИТЬ ТРЕНИРОВКУ")');
+  await page.waitForSelector('text=Отменить тренировку?');
+  await page.click('div[role="dialog"] button:has-text("Удалить")');
+  await page.waitForTimeout(400);
+
   console.log('\nPROGRAM EDITOR');
+  // Явная навигация, а не «мы и так тут»: раздел не должен падать из-за того,
+  // что предыдущий закончился на другом экране.
+  await page.goto(`${base}/programs`, { waitUntil: 'networkidle' });
+  await page.click('a:has-text("Редактировать")');
+  await page.waitForURL(/\/programs\/editor/);
+  await page.waitForTimeout(400);
   await page.click('button:has-text("Настроить") >> nth=0');
   await page.waitForSelector('text=Подходы');
   await page.fill('input[aria-label="Вес, подход 1"]', '55');

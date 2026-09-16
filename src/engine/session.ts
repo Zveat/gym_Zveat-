@@ -313,15 +313,54 @@ export function removeExerciseFromSession(
  * to-do list with holes. Exercises with nothing done are kept but marked
  * skipped, so "I skipped legs" stays visible.
  */
+/**
+ * Сколько тренировка идёт по часам, с учётом пауз.
+ *
+ * Считается от отметок времени, а не счётчиком: тикающий счётчик врёт после
+ * блокировки экрана, сворачивания приложения и перезагрузки страницы, а
+ * тренировка длится час и всё это успевает случиться.
+ */
+export function workoutElapsedSeconds(session: WorkoutSession, now: number = Date.now()): number {
+  const started = new Date(session.startedAt).getTime();
+  const pausedMs = session.clockPausedMs ?? 0;
+  // На паузе время замерло на момент её начала.
+  const until = session.clockPausedAt ? new Date(session.clockPausedAt).getTime() : now;
+  return Math.max(0, Math.round((until - started - pausedMs) / 1000));
+}
+
+/** Поставить часы на паузу. Повторный вызов ничего не меняет. */
+export function pauseClock(session: WorkoutSession, at: string = nowStamp()): WorkoutSession {
+  if (session.clockPausedAt) return session;
+  return { ...session, clockPausedAt: at };
+}
+
+/** Снять с паузы, добавив простой к накопленному. */
+export function resumeClock(session: WorkoutSession, at: string = nowStamp()): WorkoutSession {
+  if (!session.clockPausedAt) return session;
+  const paused = new Date(at).getTime() - new Date(session.clockPausedAt).getTime();
+  return {
+    ...session,
+    clockPausedAt: null,
+    clockPausedMs: (session.clockPausedMs ?? 0) + Math.max(0, paused),
+  };
+}
+
+/**
+ * Обнулить часы. Трогает только время: подходы, веса и история остаются на
+ * месте — сбрасывается секундомер, а не тренировка.
+ */
+export function resetClock(session: WorkoutSession, at: string = nowStamp()): WorkoutSession {
+  return { ...session, startedAt: at, clockPausedAt: null, clockPausedMs: 0 };
+}
+
 export function finishSession(
   session: WorkoutSession,
   at: string = nowStamp(),
 ): WorkoutSession {
   const completedAt = at;
-  const duration = Math.max(
-    0,
-    Math.round((new Date(completedAt).getTime() - new Date(session.startedAt).getTime()) / 1000),
-  );
+  // Через ту же функцию, что и живые часы: иначе в истории осело бы время
+  // вместе с паузами, а на экране всё это время показывалось другое число.
+  const duration = workoutElapsedSeconds(session, new Date(completedAt).getTime());
 
   const exercises = session.exercises.map((ex) => {
     const done = ex.sets.filter((set) => set.actual !== null);
