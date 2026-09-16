@@ -70,10 +70,19 @@ interface StoreState extends DatabaseSnapshot {
   cloud: CloudState;
   rest: RestTimerState | null;
   celebration: PRCelebration | null;
+  /**
+   * Set when a write did not land. Writes are deliberately fire-and-forget so
+   * that saving a set is instant, which means a rejected write has no call site
+   * left to report to — it used to reach `console.error` and nobody else, so
+   * body-weight entries vanished silently and the app looked broken with no
+   * explanation. Anything not written is lost, so this stays until dismissed.
+   */
+  syncError: string | null;
 }
 
 interface StoreActions {
   init: () => Promise<void>;
+  dismissSyncError: () => void;
   /** Called by the auth listener: swaps storage to that account and reloads. */
   attachAccount: (account: Account | null) => Promise<void>;
 
@@ -162,9 +171,28 @@ const KV_REST = 'rest';
 function persist(fn: (adapter: Awaited<ReturnType<typeof getAdapter>>) => Promise<unknown>) {
   void getAdapter()
     .then(fn)
-    .catch((error) => {
+    .catch((error: unknown) => {
       console.error('[gym-os] persistence failed', error);
+      useStore.setState({ syncError: describeWriteError(error) });
     });
+}
+
+/**
+ * Offline is not an error here: Firestore queues writes locally and sends them
+ * when the connection returns. A rejection means the write was refused, so the
+ * message points at the two things that actually cause it.
+ */
+function describeWriteError(error: unknown): string {
+  const code = (error as { code?: string } | null)?.code ?? '';
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (code === 'permission-denied' || /permission/i.test(message)) {
+    return 'База отклонила запись: нет прав. Проверьте правила Firestore в консоли Firebase.';
+  }
+  if (code === 'invalid-argument' || /unsupported field value|invalid data/i.test(message)) {
+    return 'Приложение попыталось сохранить данные в неверном виде — это ошибка в приложении.';
+  }
+  return `Не удалось сохранить: ${message}`;
 }
 
 function persistRecord(collection: CollectionName, record: { id: string }) {
@@ -185,6 +213,7 @@ export const useStore = create<Store>((set, get) => ({
   cloud: { configured: false, account: null, status: 'off' },
   rest: null,
   celebration: null,
+  syncError: null,
   ...buildSeedSnapshot(nowStamp()),
 
   /**
@@ -206,6 +235,10 @@ export const useStore = create<Store>((set, get) => ({
     watchAccount((account) => {
       void get().attachAccount(account);
     });
+  },
+
+  dismissSyncError() {
+    set({ syncError: null });
   },
 
   async attachAccount(account) {
@@ -717,7 +750,15 @@ export const useStore = create<Store>((set, get) => ({
 
   addBodyWeight(weight, date = todayString(), notes) {
     const existing = get().bodyWeightLogs.find((l) => l.date === date);
-    const log: BodyWeightLog = { id: existing?.id ?? newId('bw'), weight, date, notes };
+    // `{ notes }` with no note yields `{ notes: undefined }`, which Firestore
+    // refuses to write. The adapter strips it now, but not creating the key is
+    // what actually belongs here.
+    const log: BodyWeightLog = {
+      id: existing?.id ?? newId('bw'),
+      weight,
+      date,
+      ...(notes ? { notes } : {}),
+    };
     set({
       bodyWeightLogs: existing
         ? get().bodyWeightLogs.map((l) => (l.id === existing.id ? log : l))

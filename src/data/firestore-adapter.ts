@@ -19,6 +19,7 @@ import {
 import type { DatabaseSnapshot } from '@/domain/types';
 import {
   COLLECTIONS,
+  stripUndefined,
   type CollectionChange,
   type CollectionName,
   type PersistenceAdapter,
@@ -49,6 +50,13 @@ function getDb(): Firestore {
   // costs a lock that can stall the first paint.
   db = initializeFirestore(getFirebaseApp(), {
     localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }),
+    /**
+     * Second line of defence behind `stripUndefined`. Left at the default,
+     * Firestore throws on an `undefined` field value, and because writes are
+     * fire-and-forget that error only reached the console — the record showed
+     * on screen and was gone on the next launch.
+     */
+    ignoreUndefinedProperties: true,
   });
   return db;
 }
@@ -136,7 +144,7 @@ export class FirestoreAdapter implements PersistenceAdapter {
   }
 
   async put(collectionName: CollectionName, record: { id: string }) {
-    await setDoc(doc(this.path(collectionName), record.id), record);
+    await setDoc(doc(this.path(collectionName), record.id), stripUndefined(record));
   }
 
   async putMany(collectionName: CollectionName, records: { id: string }[]) {
@@ -144,7 +152,7 @@ export class FirestoreAdapter implements PersistenceAdapter {
     for (let i = 0; i < records.length; i += 400) {
       const batch = writeBatch(getDb());
       for (const record of records.slice(i, i + 400)) {
-        batch.set(doc(this.path(collectionName), record.id), record);
+        batch.set(doc(this.path(collectionName), record.id), stripUndefined(record));
       }
       await batch.commit();
     }
@@ -172,7 +180,7 @@ export class FirestoreAdapter implements PersistenceAdapter {
       await deleteDoc(this.metaDoc(key));
       return;
     }
-    await setDoc(this.metaDoc(key), { value });
+    await setDoc(this.metaDoc(key), stripUndefined({ value }));
   }
 
   async clear() {

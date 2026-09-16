@@ -1,17 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * What this pins down is a boot-time cost, not a behaviour the UI can show.
+ * Two things here are invisible from the UI and can only be pinned down at the
+ * call level.
  *
- * Opening the app used to wait on the network even when everything it needed
- * was already on the device: an empty cached collection was treated as a cache
- * miss, and a new account has four of them (sessions, notes, painLogs,
- * bodyWeightLogs), so every launch made a round trip per empty collection.
- * Only a call-level test catches that — the app looks identical either way.
+ * What is written: Firestore refuses an `undefined` field value, and writes are
+ * fire-and-forget, so a refused write reached the console and nothing else —
+ * body-weight entries showed on screen and were gone on the next launch.
+ *
+ * What is read: opening the app used to wait on the network even when
+ * everything it needed was already on the device, because an empty cached
+ * collection was treated as a cache miss and a new account has four of them.
+ * The app looks identical either way; only the call count differs.
  */
 
 const fromCache = vi.fn();
 const fromServer = vi.fn();
+const setDoc = vi.fn();
 
 vi.mock('firebase/firestore', () => ({
   collection: (_db: unknown, ...segments: string[]) => ({ path: segments.join('/') }),
@@ -23,7 +28,7 @@ vi.mock('firebase/firestore', () => ({
   onSnapshot: vi.fn(),
   persistentLocalCache: () => ({}),
   persistentSingleTabManager: () => ({}),
-  setDoc: vi.fn(),
+  setDoc: (ref: unknown, data: unknown) => setDoc(ref, data),
   writeBatch: () => ({ set: vi.fn(), delete: vi.fn(), commit: vi.fn() }),
 }));
 
@@ -37,6 +42,27 @@ const snapshot = (ids: string[]) => ({
 /** Every collection the adapter asks for, as a bare name. */
 const asked = (calls: unknown[][]) =>
   calls.map(([path]) => String(path).split('/').pop()).sort();
+
+describe('FirestoreAdapter writes', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    setDoc.mockReset();
+  });
+
+  it('never sends an undefined field value to Firestore', async () => {
+    const { FirestoreAdapter } = await import('./firestore-adapter');
+    await new FirestoreAdapter('uid').put('bodyWeightLogs', {
+      id: 'bw_1',
+      weight: 84.5,
+      date: '2026-09-15',
+      notes: undefined,
+    } as { id: string });
+
+    const [, written] = setDoc.mock.calls[0];
+    expect(written).toEqual({ id: 'bw_1', weight: 84.5, date: '2026-09-15' });
+    expect('notes' in (written as object)).toBe(false);
+  });
+});
 
 describe('FirestoreAdapter.loadAll', () => {
   beforeEach(() => {

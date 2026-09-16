@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
-import { Skeleton } from '@/components/ui/primitives';
+import { Button, Notice, Skeleton } from '@/components/ui/primitives';
 import { useStore } from '@/store/useStore';
 import { BottomNav } from './BottomNav';
 import { SignInScreen } from './SignInScreen';
@@ -32,11 +32,46 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <>
+      <SyncErrorBanner />
       {children}
       {!immersive ? <BottomNav /> : null}
       <RestTimerOverlay />
       <PRCelebrationOverlay />
     </>
+  );
+}
+
+/**
+ * A write that did not land has to say so, on every screen.
+ *
+ * Saving is fire-and-forget so that logging a set is instant, which means a
+ * refused write has nobody to return an error to. Without this the app just
+ * quietly forgot what it had already drawn on screen — body-weight entries
+ * were typed three times before the failure became apparent at all.
+ */
+function SyncErrorBanner() {
+  const syncError = useStore((s) => s.syncError);
+  const dismiss = useStore((s) => s.dismissSyncError);
+
+  if (!syncError) return null;
+
+  return (
+    <div
+      className="mx-auto w-full max-w-lg px-4"
+      style={{ paddingTop: 'calc(var(--safe-top) + 10px)' }}
+    >
+      <Notice
+        tone="pain"
+        title="Не сохранилось"
+        action={
+          <Button size="sm" variant="outline" onClick={dismiss}>
+            ПОНЯТНО
+          </Button>
+        }
+      >
+        {syncError}
+      </Notice>
+    </div>
   );
 }
 

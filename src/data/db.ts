@@ -39,6 +39,37 @@ export interface CollectionChange {
   removed: string[];
 }
 
+/**
+ * Drops keys whose value is `undefined`, at any depth.
+ *
+ * Firestore rejects an `undefined` field value outright — `setDoc` throws
+ * "Unsupported field value: undefined" — and the store builds records from
+ * optional fields with object literals, so `{ notes }` with no note produces
+ * `{ notes: undefined }` and the whole write fails. That is how body-weight
+ * entries were lost: the record appeared on screen from the optimistic update,
+ * the write threw, and the value was gone on the next launch.
+ *
+ * There are 25 optional fields in the domain, so this is fixed here, once, at
+ * the boundary rather than at each call site. An absent optional field and an
+ * `undefined` one mean the same thing in this app, so dropping the key loses
+ * nothing. Arrays keep their length — an index is not a key.
+ */
+export function stripUndefined<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripUndefined(item)) as unknown as T;
+  }
+  // Dates, and anything else that is not a plain object, pass through whole.
+  if (value === null || typeof value !== 'object' || Object.getPrototypeOf(value) !== Object.prototype) {
+    return value;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (item === undefined) continue;
+    out[key] = stripUndefined(item);
+  }
+  return out as T;
+}
+
 export interface PersistenceAdapter {
   readonly kind: StorageKind;
   /** Live updates from other devices. Only the cloud adapter implements it. */

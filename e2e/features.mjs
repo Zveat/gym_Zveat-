@@ -138,6 +138,19 @@ async function main() {
   check('records a body weight entry', has(body, '80.2 кг'));
   check('offers bulk / maintain / cut', has(body, 'Набор', 'Поддержание', 'Сушка'));
 
+  // Seeing the entry proves nothing: the store updates optimistically, so the
+  // number appears whether or not the write landed. Entries were being lost
+  // exactly here — the record built `notes: undefined`, the write was refused,
+  // and it was gone on the next launch. Only a reload tells the truth.
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForSelector('button:has-text("ДОБАВИТЬ")');
+  await page.waitForTimeout(400);
+  body = await text();
+  check('the entry is still there after a reload', has(body, '80.2 кг'), body.slice(0, 120));
+  // A refused write raises this banner, so its absence is part of the proof.
+  const failed = await page.locator('text=Не сохранилось').count();
+  check('nothing reported a failed write', failed === 0, `${failed} shown`);
+
   console.log('\nPAIN TRACKING');
   await page.goto(`${base}/more/pain`, { waitUntil: 'networkidle' });
   await page.waitForSelector('text=Новая отметка');
