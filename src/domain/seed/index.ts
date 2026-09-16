@@ -11,8 +11,10 @@ import { buildSeedProgram } from './program-mass-split';
  * 2 — разминка и заминка у дня.
  * 3 — цель по тренировкам: отсчёт с первой тренировки истории вместо
  *     сегодняшней даты, которую подставила версия 2.
+ * 4 — псевдонимы и новые упражнения библиотеки: до заведённой базы они не
+ *     доезжали, и импорт разбирал названия из выгрузки наугад.
  */
-export const SEED_VERSION = 3;
+export const SEED_VERSION = 4;
 
 export function defaultSettings(activeProgramId: string | null): Settings {
   return {

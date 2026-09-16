@@ -3,8 +3,8 @@
 import { create } from 'zustand';
 import { newId, nowStamp, todayString } from '@/domain/ids';
 import { DEFAULT_MODES } from '@/domain/modes';
-import { buildSeedSnapshot, defaultSettings, SEED_VERSION } from '@/domain/seed';
-import { backfillCardio, repairWorkoutGoal } from '@/domain/seed/migrations';
+import { buildSeedExercises, buildSeedSnapshot, defaultSettings, SEED_VERSION } from '@/domain/seed';
+import { backfillCardio, repairWorkoutGoal, syncLibrary } from '@/domain/seed/migrations';
 import type {
   BodyWeightLog,
   ConditionCheckIn,
@@ -1096,6 +1096,17 @@ async function loadFrom(
       programs = programs.map((p) => byId.get(p.id) ?? p);
     }
 
+    /*
+     * Библиотека: новые упражнения и псевдонимы. Без этого шага импорт на
+     * заведённой базе сводил названия из выгрузки к чему попало — псевдонимы
+     * жили только в засеве.
+     */
+    const library = syncLibrary(exercises, buildSeedExercises(nowStamp()));
+    if (library.add.length || library.update.length) {
+      const refreshed = new Map(library.update.map((e) => [e.id, e]));
+      exercises = [...exercises.map((e) => refreshed.get(e.id) ?? e), ...library.add];
+    }
+
     const goal = repairWorkoutGoal(storedSettings?.workoutGoal);
 
     storedSettings = {
@@ -1106,6 +1117,8 @@ async function loadFrom(
 
     try {
       if (patched.length) await adapter.putMany('programs', patched);
+      if (library.add.length) await adapter.putMany('exercises', library.add);
+      if (library.update.length) await adapter.putMany('exercises', library.update);
       await adapter.setKV(KV_SETTINGS, storedSettings);
     } catch (error) {
       // Не блокирует запуск: не доехало — доедет при следующем открытии.

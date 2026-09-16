@@ -1,4 +1,4 @@
-import type { CardioBlock, Program, WorkoutCountGoal, WorkoutDay } from '../types';
+import type { CardioBlock, Exercise, Program, WorkoutCountGoal, WorkoutDay } from '../types';
 
 /**
  * ДОБАВЛЕНИЕ НОВОГО В УЖЕ СУЩЕСТВУЮЩУЮ БАЗУ.
@@ -122,4 +122,70 @@ export function repairWorkoutGoal(
   if (current === undefined) return initialWorkoutGoal();
   if (current === null) return null;
   return isStaleAutoGoal(current) ? initialWorkoutGoal() : null;
+}
+
+/* ── Библиотека упражнений ──────────────────────────────────────────── */
+
+/**
+ * Переименования упражнений засева: id → ПРЕЖНЕЕ имя.
+ *
+ * Имя владелец может поменять сам, поэтому переименовываем только то, что
+ * стоит ровно как раньше. Правку руками не затираем.
+ */
+const RENAMED: Record<string, string> = {
+  ex_seated_alt_curl: 'Подъем гантелей сидя попеременно',
+};
+
+export interface LibrarySync {
+  /** Упражнений в базе нет — добавить. */
+  add: Exercise[];
+  /** Упражнения есть, но с устаревшими псевдонимами или именем. */
+  update: Exercise[];
+}
+
+/**
+ * ЧТО ДОЗАЛИТЬ В БИБЛИОТЕКУ УЖЕ ЗАВЕДЁННОЙ БАЗЫ.
+ *
+ * ЗАЧЕМ. Библиотека засевается один раз. Всё, что добавляется в неё потом —
+ * новые упражнения и, главное, ПСЕВДОНИМЫ, по которым импорт узнаёт названия
+ * из выгрузки — до заведённой базы не доезжает никак: ветка дозасева работает
+ * только когда в базе нет программы. То есть вся работа по сведению 26
+ * названий была видна в тестах и не существовала на телефоне владельца, а
+ * импорт разобрал бы те же названия наугад.
+ *
+ * ЧТО МОЖНО ТРОГАТЬ. Псевдонимы (`aliases`) — можно: в интерфейсе их не
+ * правят, поэтому своего у владельца там нет, и объединение ничего не теряет.
+ * Имя — только если оно стоит ровно как в прежнем засеве (см. `RENAMED`).
+ * Остальные поля (вес шага, подсказки, мышцы) не трогаем вообще: их правят
+ * руками, и «обновление библиотеки» не должно откатывать чужие правки.
+ */
+export function syncLibrary(current: Exercise[], seed: Exercise[]): LibrarySync {
+  const byId = new Map(current.map((e) => [e.id, e]));
+  const add: Exercise[] = [];
+  const update: Exercise[] = [];
+
+  for (const fresh of seed) {
+    const mine = byId.get(fresh.id);
+    if (!mine) {
+      add.push(fresh);
+      continue;
+    }
+
+    const merged = [...new Set([...(mine.aliases ?? []), ...(fresh.aliases ?? [])])];
+    const aliasesChanged = merged.length !== (mine.aliases?.length ?? 0);
+
+    const renameFrom = RENAMED[fresh.id];
+    const canRename =
+      renameFrom !== undefined && mine.name === renameFrom && fresh.name !== mine.name;
+
+    if (!aliasesChanged && !canRename) continue;
+
+    update.push({
+      ...mine,
+      ...(merged.length ? { aliases: merged } : {}),
+      ...(canRename ? { name: fresh.name } : {}),
+    });
+  }
+
+  return { add, update };
 }

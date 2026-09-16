@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { Program, WorkoutDay } from '../types';
+import type { Exercise, Program, WorkoutDay } from '../types';
+import { buildSeedExercises } from './exercise-library';
 import {
   backfillCardio,
   COOLDOWN_DEFAULT,
@@ -8,6 +9,7 @@ import {
   isLegsDay,
   isStaleAutoGoal,
   repairWorkoutGoal,
+  syncLibrary,
   WARMUP_DEFAULT,
 } from './migrations';
 
@@ -162,5 +164,75 @@ describe('цель из прошлой сборки', () => {
     for (const date of ['2026-09-16', '2026-09-20', '2026-10-01']) {
       expect(isStaleAutoGoal({ ...stale, startDate: date, countFrom: date })).toBe(true);
     }
+  });
+});
+
+describe('синхронизация библиотеки с заведённой базой', () => {
+  const seed = buildSeedExercises('2026-01-01T00:00:00.000Z');
+  const byId = (list: Exercise[], id: string) => list.find((e) => e.id === id)!;
+
+  it('добавляет упражнения, которых в базе нет', () => {
+    // Заведённая база засев не увидит, поэтому новые упражнения доезжают
+    // только этим шагом.
+    const current = seed.filter((e) => e.id !== 'ex_lat_pulldown_medium');
+    const { add } = syncLibrary(current, seed);
+    expect(add.map((e) => e.id)).toEqual(['ex_lat_pulldown_medium']);
+  });
+
+  it('дозаливает псевдонимы существующему упражнению', () => {
+    // Главное в этом шаге: без псевдонимов импорт сводит названия из выгрузки
+    // наугад, и заметить это нечем.
+    const current = seed.map((e) =>
+      e.id === 'ex_bar_pushdown' ? { ...e, aliases: undefined } : e,
+    );
+    const { update } = syncLibrary(current, seed);
+    const patched = byId(update, 'ex_bar_pushdown');
+    expect(patched.aliases).toContain('Разгибание рук на блоке с прямой рукоятью');
+  });
+
+  it('объединяет, а не заменяет: ничего не теряется', () => {
+    const current = seed.map((e) =>
+      e.id === 'ex_bar_pushdown' ? { ...e, aliases: ['Моё название'] } : e,
+    );
+    const patched = byId(syncLibrary(current, seed).update, 'ex_bar_pushdown');
+    expect(patched.aliases).toContain('Моё название');
+    expect(patched.aliases).toContain('Разгибание рук на блоке с прямой рукоятью');
+  });
+
+  it('ничего не возвращает, когда база уже свежая — иначе писали бы при каждом запуске', () => {
+    expect(syncLibrary(seed, seed)).toEqual({ add: [], update: [] });
+  });
+
+  it('переименовывает только то, что стоит ровно как в прежнем засеве', () => {
+    const old = seed.map((e) =>
+      e.id === 'ex_seated_alt_curl'
+        ? { ...e, name: 'Подъем гантелей сидя попеременно', aliases: undefined }
+        : e,
+    );
+    const patched = byId(syncLibrary(old, seed).update, 'ex_seated_alt_curl');
+    expect(patched.name).toBe('Подъем гантелей сидя попеременно (наклон)');
+  });
+
+  it('не затирает имя, которое владелец поменял сам', () => {
+    const mine = seed.map((e) =>
+      e.id === 'ex_seated_alt_curl'
+        ? { ...e, name: 'Бицепс на скамье, моя правка', aliases: undefined }
+        : e,
+    );
+    const patched = byId(syncLibrary(mine, seed).update, 'ex_seated_alt_curl');
+    expect(patched.name).toBe('Бицепс на скамье, моя правка');
+    // Псевдонимы при этом всё равно дозалились — по ним и работает импорт.
+    expect(patched.aliases).toContain('Подьем гантелей на бицепс на наклонной скамье');
+  });
+
+  it('не трогает поля, которые правят руками', () => {
+    const mine = seed.map((e) =>
+      e.id === 'ex_bar_pushdown'
+        ? { ...e, aliases: undefined, increment: 1, keyPoints: ['моя подсказка'] }
+        : e,
+    );
+    const patched = byId(syncLibrary(mine, seed).update, 'ex_bar_pushdown');
+    expect(patched.increment).toBe(1);
+    expect(patched.keyPoints).toEqual(['моя подсказка']);
   });
 });
