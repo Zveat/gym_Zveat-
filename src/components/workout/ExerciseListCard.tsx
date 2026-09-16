@@ -51,7 +51,7 @@ export function ExerciseListCard({
 
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
-          <span className="min-w-0 flex-1 truncate text-[15px] leading-snug font-medium">
+          <span className="line-clamp-2 min-w-0 flex-1 text-[15px] leading-snug font-medium">
             {exercise.name}
           </span>
           {current ? <Badge color="var(--color-accent)">Сейчас</Badge> : null}

@@ -1038,6 +1038,33 @@ async function main() {
   body = await text();
   check('the goal counts the imported history', has(body, '/ 100'), '');
 
+  console.log('\nНАЗВАНИЯ УПРАЖНЕНИЙ ВИДНО ЦЕЛИКОМ');
+  /*
+   * В библиотеке шесть тяг верхнего блока и три разгибания на блоке, поэтому
+   * «Тяга верхнего блок…» и «Разгибание рук на …» не отличимы друг от друга:
+   * обрезанное имя не говорит, какое из упражнений перед тобой. Проверяем по
+   * ВЫЧИСЛЕННОЙ ширине, а не по разметке: обрезка делается стилем, и в
+   * `innerText` её не видно.
+   */
+  await page.setViewportSize(VIEWPORTS.pro);
+  for (const url of ['/progress/exercise', '/records']) {
+    await page.goto(`${base}${url}`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(400);
+    const clipped = await page.evaluate(() => {
+      const bad = [];
+      for (const el of document.querySelectorAll('a p, a span')) {
+        const cs = getComputedStyle(el);
+        const oneLine = cs.textOverflow === 'ellipsis' && cs.whiteSpace === 'nowrap';
+        // Обрезка в одну строку у длинного текста — это и есть потеря имени.
+        if (oneLine && el.scrollWidth > el.clientWidth + 1) {
+          bad.push(`${el.textContent.trim().slice(0, 28)}…`);
+        }
+      }
+      return bad;
+    });
+    check(`${url} shows exercise names in full`, clipped.length === 0, clipped.join(' | '));
+  }
+
   console.log('\nСТАРАЯ БАЗА ОБНОВЛЯЕТСЯ ДО НОВОЙ СБОРКИ');
   /*
    * САМАЯ ДОРОГАЯ ДЫРА В ПРОВЕРКАХ: всё остальное здесь работает на ЧИСТОЙ

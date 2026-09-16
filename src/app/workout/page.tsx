@@ -262,7 +262,9 @@ export default function ActiveWorkoutPage() {
                 }}
                 className="flex w-full items-center gap-3 rounded-[var(--radius-tile)] bg-surface2 px-3.5 py-3 text-left active:bg-surface3"
               >
-                <span className="min-w-0 flex-1 truncate text-[14.5px]">{exercise.name}</span>
+                <span className="line-clamp-2 min-w-0 flex-1 text-[14.5px] leading-tight">
+                  {exercise.name}
+                </span>
                 <span className="shrink-0 text-[11px] text-dim">
                   {MUSCLE_LABEL[exercise.primaryMuscle]}
                 </span>

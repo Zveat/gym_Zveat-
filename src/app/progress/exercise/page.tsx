@@ -118,10 +118,19 @@ function ExerciseIndex() {
             {rows.map((row) => (
               <li key={row.id}>
                 <Link href={`/progress/exercise?id=${row.id}`}>
-                  <Card className="flex items-center gap-3 p-4 active:bg-surface2">
+                  <Card className="flex items-center gap-2.5 p-4 active:bg-surface2">
+                    {/*
+                      Название в две строки, а не в обрез. «Тяга верхнего
+                      блок…» и «Разгибание рук на …» не отличимы друг от
+                      друга: в библиотеке шесть тяг верхнего блока и три
+                      разгибания на блоке, и обрезанное имя не говорит, какое
+                      из них. Поэтому две строки и более узкий график.
+                    */}
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-[14.5px] font-medium">{row.name}</p>
-                      <p className="tnum mt-1 text-[12px] text-dim">
+                      <p className="line-clamp-2 text-[14.5px] leading-tight font-medium">
+                        {row.name}
+                      </p>
+                      <p className="tnum mt-1 text-[12px] leading-tight text-dim">
                         {row.muscle ? `${MUSCLE_LABEL[row.muscle]} · ` : ''}
                         {count(row.sessions, WORDS.workout)} · {formatWeight(row.latest)} кг
                       </p>
@@ -130,6 +139,7 @@ function ExerciseIndex() {
                     {row.spark.length > 1 ? (
                       <Sparkline
                         values={row.spark}
+                        width={64}
                         color={
                           (row.change ?? 0) >= 0 ? 'var(--color-accent)' : 'var(--status-warning)'
                         }

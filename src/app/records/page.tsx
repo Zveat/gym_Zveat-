@@ -119,7 +119,11 @@ export default function RecordsPage() {
                       {index + 1}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-[14.5px] font-medium">{row.exerciseName}</p>
+                      {/* Две строки: обрезанное «Тяга верхнего блок…» не
+                          отличимо от пяти других тяг верхнего блока. */}
+                      <p className="line-clamp-2 text-[14.5px] leading-tight font-medium">
+                        {row.exerciseName}
+                      </p>
                       <p className="tnum mt-0.5 text-[11.5px] text-dim">
                         {row.date ? formatDateShort(row.date) : '—'}
                       </p>

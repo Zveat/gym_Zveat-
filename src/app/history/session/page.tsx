@@ -321,7 +321,7 @@ function ExerciseSummary({
     <Card className="p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-[15px] font-medium">{exercise.name}</p>
+          <p className="line-clamp-2 text-[15px] leading-tight font-medium">{exercise.name}</p>
           <p className="mt-0.5 text-[11px] text-faint uppercase">
             {MUSCLE_LABEL[exercise.primaryMuscle]}
           </p>
