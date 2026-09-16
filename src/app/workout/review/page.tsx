@@ -30,7 +30,7 @@ import { useStore } from '@/store/useStore';
 export default function ReviewPage() {
   return (
     <Suspense fallback={<Screen />}>
-      <Review />
+      <ReviewRoute />
     </Suspense>
   );
 }
@@ -41,6 +41,20 @@ const VERDICT_META: Record<Verdict, { label: string; color: string; icon: string
   decrease: { label: 'Лучше снизить', color: 'var(--status-pain)', icon: '🔴' },
   none: { label: '', color: 'var(--color-dim)', icon: '' },
 };
+
+/**
+ * Состояние экрана принадлежит записи, а не маршруту.
+ *
+ * Переход на другой `?id=` внутри того же маршрута оставляет компонент
+ * смонтированным, и всё локальное состояние переезжает на новую запись. На
+ * экране упражнения это выглядело как «Все подходы выполнены» при 0/4:
+ * выбранный подход был из предыдущего упражнения. `key` заставляет React
+ * смонтировать экран заново.
+ */
+function ReviewRoute() {
+  const sessionId = useSearchParams().get('id');
+  return <Review key={sessionId ?? 'none'} />;
+}
 
 function Review() {
   const router = useRouter();

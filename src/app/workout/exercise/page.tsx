@@ -83,15 +83,33 @@ function lastSummary(history: { entry: SessionExercise }): string {
 export default function ExerciseWorkoutPage() {
   return (
     <Suspense fallback={<Screen />}>
-      <ExerciseWorkout />
+      <ExerciseWorkoutRoute />
     </Suspense>
   );
 }
 
-function ExerciseWorkout() {
+/**
+ * КАЖДОЕ УПРАЖНЕНИЕ — СВЕЖИЙ ЭКРАН.
+ *
+ * Переход между упражнениями меняет только `?id=` в адресе, поэтому React
+ * оставляет компонент смонтированным и всё его состояние переезжает на
+ * следующее упражнение. Ломалось на этом главное: `selectedSetId` указывал на
+ * подход из ПРЕДЫДУЩЕГО упражнения, в новом такого подхода нет, и экран
+ * показывал «Все подходы выполнены» при 0/4 — с кнопкой «добавить подход»
+ * вместо ввода веса. Заодно переезжали открытые шиты, набранная заметка о
+ * боли и подтверждение «подход сохранён».
+ *
+ * `key` заставляет React смонтировать экран заново. Это лечит все двенадцать
+ * переменных состояния сразу, а не одну: экран по смыслу принадлежит
+ * упражнению, значит и жить должен ровно столько.
+ */
+function ExerciseWorkoutRoute() {
+  const entryId = useSearchParams().get('id');
+  return <ExerciseWorkout key={entryId ?? 'none'} entryId={entryId} />;
+}
+
+function ExerciseWorkout({ entryId }: { entryId: string | null }) {
   const router = useRouter();
-  const params = useSearchParams();
-  const entryId = params.get('id');
 
   const session = useActiveSession();
   const sessions = useStore((s) => s.sessions);

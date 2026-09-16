@@ -76,6 +76,39 @@ async function main() {
   await page.click('button[aria-label="Закрыть"] >> nth=1');
   await page.waitForSelector('button:has-text("СОХРАНИТЬ ПОДХОД")');
 
+  // ПЕРЕХОД МЕЖДУ УПРАЖНЕНИЯМИ НЕ ТАЩИТ СОСТОЯНИЕ.
+  //
+  // Переход меняет только `?id=` в адресе, поэтому React оставлял компонент
+  // смонтированным и все 12 переменных состояния экрана переезжали на
+  // следующее упражнение. Виднее всего было на `selectedSetId`: он указывал на
+  // подход из предыдущего упражнения, такого подхода в новом нет, и экран
+  // показывал «Все подходы выполнены» при 0/4 — вместо ввода веса кнопка
+  // «добавить подход». Проверяется именно этот путь: выбрать подход, уйти,
+  // вернуться.
+  const setRow = page.locator('ul li button').first();
+  if (await setRow.count()) await setRow.click();
+  await page.waitForTimeout(200);
+
+  const nextExercise = page.locator('button:has-text("ДАЛЕЕ"), a:has-text("ДАЛЕЕ")').first();
+  await nextExercise.click();
+  await page.waitForTimeout(600);
+  body = await text();
+  check(
+    'the next exercise opens ready to log, not as "all sets done"',
+    !has(body, 'Все подходы выполнены') && has(body, 'СОХРАНИТЬ ПОДХОД'),
+    body.slice(0, 160),
+  );
+
+  const prevExercise = page.locator('button:has-text("НАЗАД"), a:has-text("НАЗАД")').first();
+  await prevExercise.click();
+  await page.waitForTimeout(600);
+  body = await text();
+  check(
+    'and so does the one you came back to',
+    !has(body, 'Все подходы выполнены') && has(body, 'СОХРАНИТЬ ПОДХОД'),
+    body.slice(0, 160),
+  );
+
   console.log('\nCOMPLETE A SET');
   await page.click('button[aria-label="Плюс 2.5"]'); // 50 -> 52.5
   await page.click('button:has-text("НОРМА")');
