@@ -12,6 +12,7 @@ export function defaultSettings(activeProgramId: string | null): Settings {
     defaultRestSeconds: 90,
     hapticsEnabled: true,
     restTimerAutoStart: true,
+    autoAdvanceExercise: true,
     bodyWeightGoal: 'bulk',
     activeProgramId,
     modes: DEFAULT_MODES,

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { Button, cx } from '@/components/ui/primitives';
+import { Button, Chip, cx } from '@/components/ui/primitives';
 import { formatClock } from '@/engine/format';
 import { useHaptics } from '@/hooks/useHaptics';
 import { useTicker } from '@/hooks/useTicker';
@@ -14,9 +14,13 @@ import { useStore } from '@/store/useStore';
  * The end time is stored, not a countdown — locking the phone or switching
  * apps cannot desynchronise it, and reloading mid-rest resumes correctly.
  */
+/** Готовые длительности отдыха из §5. */
+const REST_PRESETS = [60, 90, 120, 180] as const;
+
 export function RestTimerOverlay() {
   const rest = useStore((s) => s.rest);
   const extendRest = useStore((s) => s.extendRest);
+  const setRestDuration = useStore((s) => s.setRestDuration);
   const clearRest = useStore((s) => s.clearRest);
   const now = useTicker(rest !== null);
   const haptics = useHaptics();
@@ -77,16 +81,37 @@ export function RestTimerOverlay() {
         )}
       </p>
 
-      <div className="mt-8 flex w-full max-w-xs flex-col gap-2.5">
+      <div className="mt-7 flex w-full max-w-xs flex-col gap-2.5">
         {done ? (
           <Button size="lg" variant="primary" full onClick={clearRest}>
-            ПРОДОЛЖИТЬ
+            НАЧАТЬ ПОДХОД
           </Button>
         ) : (
           <>
-            <Button size="lg" variant="secondary" full onClick={() => extendRest(30)}>
-              +30 СЕК
-            </Button>
+            {/*
+              §5: готовые значения. Тап ставит длительность заново от этого
+              момента — нажал «90», значит хочет отдыхать девяносто секунд.
+            */}
+            <div className="flex justify-center gap-1.5">
+              {REST_PRESETS.map((seconds) => (
+                <Chip
+                  key={seconds}
+                  selected={rest.totalSeconds === seconds}
+                  onClick={() => setRestDuration(seconds)}
+                >
+                  {seconds} с
+                </Chip>
+              ))}
+            </div>
+
+            <div className="flex gap-2.5">
+              <Button size="lg" variant="secondary" className="flex-1" onClick={() => extendRest(-15)}>
+                −15 СЕК
+              </Button>
+              <Button size="lg" variant="secondary" className="flex-1" onClick={() => extendRest(15)}>
+                +15 СЕК
+              </Button>
+            </div>
             <Button size="lg" variant="ghost" full onClick={clearRest}>
               ПРОПУСТИТЬ
             </Button>

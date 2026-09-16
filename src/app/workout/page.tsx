@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExerciseListCard } from '@/components/workout/ExerciseListCard';
 import { ConfirmDialog, Sheet } from '@/components/ui/Sheet';
 import { TextArea } from '@/components/ui/inputs';
@@ -41,6 +41,19 @@ export default function ActiveWorkoutPage() {
 
   const progress = useMemo(() => (session ? sessionProgress(session) : null), [session]);
   const currentId = useMemo(() => (session ? currentExerciseId(session) : null), [session]);
+
+  /**
+   * §36: подводим к текущему упражнению само.
+   *
+   * После автоперехода и после возврата из упражнения нужное может оказаться
+   * ниже сгиба — в списке из семи упражнений это лишняя прокрутка ровно в тот
+   * момент, когда человек стоит у тренажёра. `nearest` вместо `center`: рывок
+   * экрана в зале раздражает сильнее, чем пара сантиметров недоводки.
+   */
+  const currentRef = useRef<HTMLLIElement | null>(null);
+  useEffect(() => {
+    currentRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [currentId]);
 
   if (!session || !progress) {
     return (
@@ -100,7 +113,8 @@ export default function ActiveWorkoutPage() {
         <div className="mx-auto max-w-lg px-4 pb-3">
           <div className="tnum flex items-baseline justify-between text-[11.5px] text-dim">
             <span>
-              Выполнено упражнений: {progress.completedExercises} из {progress.totalExercises}
+              {progress.completedSets} / {progress.totalSets} подходов · упражнений{' '}
+              {progress.completedExercises} из {progress.totalExercises}
             </span>
             <span>{formatVolume(sessionVolume(session))} кг</span>
           </div>
@@ -114,7 +128,7 @@ export default function ActiveWorkoutPage() {
       >
         <ul className="flex flex-col gap-2.5">
           {session.exercises.map((exercise, index) => (
-            <li key={exercise.id}>
+            <li key={exercise.id} ref={exercise.id === currentId ? currentRef : undefined}>
               <ExerciseListCard
                 exercise={exercise}
                 index={index}

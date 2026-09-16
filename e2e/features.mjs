@@ -57,12 +57,22 @@ async function main() {
 
   console.log('\nOBSERVATIONS DRIVE THE RECOMMENDATION');
   // Close the plan at the rep target, but report pain: pain must win.
+  const exerciseUrl = page.url();
   for (let i = 0; i < 4; i += 1) {
     await page.click('button:has-text("СОХРАНИТЬ ПОДХОД")');
     const skip = page.locator('button:text-is("ПРОПУСТИТЬ")');
     if (await skip.count()) await skip.click();
     await page.waitForTimeout(200);
   }
+
+  // §37: закрыт последний подход — приложение само уходит на следующее
+  // упражнение. Проверяем это здесь же, раз оно всё равно происходит, и
+  // возвращаемся, потому что дальше нужна отметка именно на этом упражнении.
+  await page.waitForTimeout(1200);
+  check('the last set hands over to the next exercise on its own', page.url() !== exerciseUrl, page.url());
+  await page.goto(exerciseUrl, { waitUntil: 'networkidle' });
+  await page.waitForSelector('button:has-text("Боль")');
+
   await page.click('button:has-text("Боль")');
   await page.waitForTimeout(200);
   body = await text();

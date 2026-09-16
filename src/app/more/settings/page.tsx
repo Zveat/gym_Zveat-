@@ -142,6 +142,12 @@ export default function SettingsPage() {
             onChange={(restTimerAutoStart) => updateSettings({ restTimerAutoStart })}
           />
           <Toggle
+            label="Автопереход к упражнению"
+            description="После последнего подхода сразу открывается следующее упражнение."
+            checked={settings.autoAdvanceExercise}
+            onChange={(autoAdvanceExercise) => updateSettings({ autoAdvanceExercise })}
+          />
+          <Toggle
             label="Вибрация"
             description="Подход сохранён, новый рекорд, конец отдыха."
             checked={settings.hapticsEnabled}

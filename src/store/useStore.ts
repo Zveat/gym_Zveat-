@@ -132,6 +132,8 @@ interface StoreActions {
   /* Rest timer */
   startRest: (seconds: number, context: Omit<RestTimerState, 'endsAt' | 'totalSeconds'>) => void;
   extendRest: (seconds: number) => void;
+  /** Задать длительность отдыха целиком (быстрые значения 60/90/120/180). */
+  setRestDuration: (seconds: number) => void;
   clearRest: () => void;
   dismissCelebration: () => void;
 
@@ -566,10 +568,30 @@ export const useStore = create<Store>((set, get) => ({
   extendRest(seconds) {
     const rest = get().rest;
     if (!rest) return;
+    /**
+     * Работает в обе стороны: «−15 сек» — это тот же вызов с отрицательным
+     * числом. Оба края подрезаются, иначе минус уводил бы таймер в прошлое, а
+     * `totalSeconds` — в отрицательные, и кольцо прогресса рисовало бы чушь.
+     */
+    const endsAt = Math.max(Date.now(), Math.max(Date.now(), rest.endsAt) + seconds * 1000);
     const next: RestTimerState = {
       ...rest,
-      endsAt: Math.max(Date.now(), rest.endsAt) + seconds * 1000,
-      totalSeconds: rest.totalSeconds + seconds,
+      endsAt,
+      totalSeconds: Math.max(5, rest.totalSeconds + seconds),
+    };
+    set({ rest: next });
+    persist((adapter) => adapter.setKV(KV_REST, next));
+  },
+
+  setRestDuration(seconds) {
+    const rest = get().rest;
+    if (!rest) return;
+    // Отсчёт с этого момента, а не от начала подхода: человек нажал «90»,
+    // потому что хочет отдыхать девяносто секунд, а не «уже 40 прошло».
+    const next: RestTimerState = {
+      ...rest,
+      endsAt: Date.now() + seconds * 1000,
+      totalSeconds: seconds,
     };
     set({ rest: next });
     persist((adapter) => adapter.setKV(KV_REST, next));

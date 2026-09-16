@@ -22,8 +22,8 @@ import {
   Notice,
   cx,
 } from '@/components/ui/primitives';
-import type { Difficulty, ObservationTag, SessionSet } from '@/domain/types';
-import { formatDateShort, formatRepRange, formatWeight, MUSCLE_LABEL } from '@/engine/format';
+import type { Difficulty, ObservationTag, SessionExercise, SessionSet } from '@/domain/types';
+import { formatRepRange, formatWeight, MUSCLE_LABEL } from '@/engine/format';
 import { lastPerformance } from '@/engine/history';
 import { personalRecords } from '@/engine/records';
 import { nextSet, suggestedInput } from '@/engine/session';
@@ -39,6 +39,32 @@ import { useStore } from '@/store/useStore';
  * the largest things on the display because they are read at arm's length,
  * between sets, one-handed.
  */
+/**
+ * Готовые дельты веса (§8). Держим обе стороны: в зале снять вес приходится так
+ * же часто, как добавить, а многократные нажатия ± между подходами — это ровно
+ * то время, которое ТЗ и просит убрать.
+ */
+const WEIGHT_DELTAS = [-2.5, -1, 1, 2.5, 5] as const;
+const REP_DELTAS = [-1, 1, 2, 5] as const;
+
+/** Прошлый раз одной строкой: «50 × 12 × 4» вместо списка из пяти подходов. */
+function lastSummary(history: { entry: SessionExercise }): string {
+  const done = history.entry.sets.filter((s) => s.actual);
+  if (!done.length) return '—';
+  const first = done[0].actual!;
+  const same = done.every(
+    (s) => s.actual!.weight === first.weight && s.actual!.reps === first.reps,
+  );
+  // Одинаковые подходы сворачиваются в «вес × повт × количество»; разные
+  // показываем диапазоном, иначе строка врёт.
+  if (same) return `${formatWeight(first.weight)} × ${first.reps} × ${done.length}`;
+  const weights = done.map((s) => s.actual!.weight);
+  const min = Math.min(...weights);
+  const max = Math.max(...weights);
+  const range = min === max ? formatWeight(min) : `${formatWeight(min)}–${formatWeight(max)}`;
+  return `${range} × ${done.length} подх.`;
+}
+
 export default function ExerciseWorkoutPage() {
   return (
     <Suspense fallback={<Screen />}>
@@ -63,6 +89,7 @@ function ExerciseWorkout() {
   const setExerciseNote = useStore((s) => s.setExerciseNote);
   const toggleObservation = useStore((s) => s.toggleObservation);
   const startRest = useStore((s) => s.startRest);
+  const updateSettings = useStore((s) => s.updateSettings);
   const haptics = useHaptics();
 
   const index = session?.exercises.findIndex((e) => e.id === entryId) ?? -1;
@@ -75,6 +102,12 @@ function ExerciseWorkout() {
   const [details, setDetails] = useState<DetailTab | null>(null);
   const [showNote, setShowNote] = useState(false);
   const [editValue, setEditValue] = useState<'weight' | 'reps' | null>(null);
+  /**
+   * §12: подтверждение прямо на кнопке. Подход сохраняется мгновенно, но без
+   * ответа на том же месте, куда смотрел палец, остаётся сомнение «нажалось
+   * ли» — а следующий подход уже подставлен, и экран выглядит почти так же.
+   */
+  const [justSaved, setJustSaved] = useState(false);
   const [editDraft, setEditDraft] = useState('');
 
   // The target set is whichever one is next, unless the user picked another.
@@ -139,19 +172,66 @@ function ExerciseWorkout() {
     completeSet(entry.id, targetSet.id, { weight, reps, difficulty });
     haptics('light');
     setSelectedSetId(null);
+    setJustSaved(true);
 
-    if (settings.restTimerAutoStart) {
-      const remaining = entry.sets.filter((s) => s.id !== targetSet.id && !s.actual).length;
+    const remaining = entry.sets.filter((s) => s.id !== targetSet.id && !s.actual).length;
+
+    if (settings.restTimerAutoStart && remaining > 0) {
       // No rest after the final set: the user is moving on, not resting.
-      if (remaining > 0) {
-        startRest(entry.restSeconds || settings.defaultRestSeconds, {
-          sessionId: session.id,
-          exerciseId: entry.id,
-          setNumber: targetSet.setNumber,
-        });
+      startRest(entry.restSeconds || settings.defaultRestSeconds, {
+        sessionId: session.id,
+        exerciseId: entry.id,
+        setNumber: targetSet.setNumber,
+      });
+    }
+
+    /**
+     * §37: последний подход закрыт — открываем следующее упражнение само.
+     *
+     * Через короткую задержку, а не мгновенно: подтверждение «ПОДХОД СОХРАНЁН»
+     * должно успеть появиться там, куда смотрел палец, иначе экран просто
+     * подменяется и остаётся сомнение, записалось ли. И только если следующее
+     * упражнение есть и оно не выполнено — иначе это прыжок непонятно куда.
+     */
+    if (remaining === 0 && settings.autoAdvanceExercise) {
+      const next = session.exercises
+        .slice(index + 1)
+        .find((e) => e.status !== 'done' && e.status !== 'skipped');
+      if (next) {
+        haptics('notify');
+        window.setTimeout(() => {
+          router.replace(`/workout/exercise?id=${next.id}`);
+        }, 900);
       }
     }
   };
+
+  /**
+   * Дельта веса заодно запоминается как шаг ± (§8): «обычно я добавляю 2.5»
+   * настраивается само, без похода в настройки.
+   */
+  const applyWeightDelta = (delta: number) => {
+    setWeight(Math.max(0, Math.round((weight + delta) * 100) / 100));
+    const magnitude = Math.abs(delta);
+    if (settings.weightStep !== magnitude) updateSettings({ weightStep: magnitude });
+    haptics('light');
+  };
+
+  /** §19: поставить то, что было в прошлую тренировку, одним тапом. */
+  const repeatLast = () => {
+    const done = history?.entry.sets.filter((s) => s.actual) ?? [];
+    const source = done[done.length - 1]?.actual;
+    if (!source) return;
+    setWeight(source.weight);
+    setReps(source.reps);
+    haptics('light');
+  };
+
+  useEffect(() => {
+    if (!justSaved) return;
+    const timer = window.setTimeout(() => setJustSaved(false), 900);
+    return () => window.clearTimeout(timer);
+  }, [justSaved]);
 
   const commitEdit = () => {
     const parsed = parseFloat(editDraft.replace(',', '.'));
@@ -194,25 +274,45 @@ function ExerciseWorkout() {
       </header>
 
       <Screen padBottom={false} className="pt-4">
-        <div className="mb-4">
-          <h1 className="text-[25px] leading-[1.12] font-semibold tracking-tight">{entry.name}</h1>
+        {/*
+          КОМПАКТНО НАМЕРЕННО. Экран был 1458pt при окне 852pt: чтобы поставить
+          вес, увидеть повторения и сохранить, приходилось прокручивать. В зале
+          это главный недостаток, поэтому цикл «вес → повторения → сохранить»
+          укладывается в один экран, а история, рекорд и список подходов ушли в
+          одну строку и под сгиб — они нужны глазом, а не пальцем.
+        */}
+        <div className="mb-3">
+          <h1 className="text-[21px] leading-[1.15] font-semibold tracking-tight">{entry.name}</h1>
           <div className="mt-1.5 flex items-center gap-2 text-[12px] text-dim">
             <span className="uppercase">{MUSCLE_LABEL[entry.primaryMuscle]}</span>
-            {entry.section ? (
-              <>
-                <span className="text-faint">·</span>
-                <span>{entry.section}</span>
-              </>
-            ) : null}
             <span className="text-faint">·</span>
+            {/*
+              Полоска подходов вместо строки текста: «✓✓○○» считывается за
+              взгляд, «Подход 3 из 4» приходится читать.
+            */}
+            <span className="flex items-center gap-1" aria-label={`Выполнено ${doneCount} из ${entry.sets.length}`}>
+              {entry.sets.map((set) => (
+                <span
+                  key={set.id}
+                  className={cx(
+                    'h-2 w-2 rounded-full',
+                    set.actual
+                      ? 'bg-accent'
+                      : set.id === targetSet?.id
+                        ? 'bg-ink'
+                        : 'bg-surface3',
+                  )}
+                />
+              ))}
+            </span>
             <span className="tnum">
-              {doneCount}/{entry.sets.length} подх.
+              {doneCount}/{entry.sets.length}
             </span>
           </div>
         </div>
 
         {notes.pinned.length ? (
-          <div className="mb-4 flex flex-col gap-2">
+          <div className="mb-3 flex flex-col gap-2">
             {notes.pinned.map((note) => (
               <Notice key={note.id} tone="warn" title="⚠️ Важно">
                 {note.content}
@@ -221,77 +321,54 @@ function ExerciseWorkout() {
           </div>
         ) : null}
 
-        <div className="mb-4 grid grid-cols-2 gap-2.5">
+        {/* Контекст одной строкой: прошлый раз и рекорд, тап — подробности. */}
+        <div className="mb-3 flex gap-2">
           <button
             type="button"
             onClick={() => setDetails('history')}
-            className="flex flex-col items-start rounded-[var(--radius-tile)] border border-line bg-surface p-3.5 text-left active:bg-surface2"
+            className="flex-1 rounded-[var(--radius-tile)] border border-line bg-surface px-3 py-2.5 text-left active:bg-surface2"
           >
-            <Eyebrow>В прошлый раз</Eyebrow>
-            {history ? (
-              <>
-                <ul className="tnum mt-1.5 flex flex-col gap-0.5">
-                  {history.entry.sets
-                    .filter((s) => s.actual)
-                    .slice(0, 5)
-                    .map((s) => (
-                      <li key={s.id} className="text-[14px]">
-                        {formatWeight(s.actual!.weight)} × {s.actual!.reps}
-                      </li>
-                    ))}
-                </ul>
-                <p className="mt-1.5 text-[11px] text-faint">{formatDateShort(history.date)}</p>
-              </>
-            ) : (
-              <p className="mt-1.5 text-[13px] text-dim">Первый раз</p>
-            )}
+            <span className="block text-[10.5px] font-semibold tracking-[0.12em] text-dim uppercase">
+              Прошлый раз
+            </span>
+            <span className="tnum mt-0.5 block text-[14px] font-medium">
+              {history ? lastSummary(history) : 'Первый раз'}
+            </span>
           </button>
-
           <button
             type="button"
             onClick={() => setDetails('progression')}
-            className="flex flex-col items-start rounded-[var(--radius-tile)] border border-line bg-surface p-3.5 text-left active:bg-surface2"
+            className="w-[104px] shrink-0 rounded-[var(--radius-tile)] border border-line bg-surface px-3 py-2.5 text-left active:bg-surface2"
           >
-            <Eyebrow>Личный рекорд</Eyebrow>
-            {records?.maxWeight ? (
-              <>
-                <p className="tnum mt-1.5 text-[22px] leading-none font-semibold text-accent">
-                  {formatWeight(records.maxWeight.value)}
-                  <span className="ml-1 text-[12px] font-medium text-dim">кг</span>
-                </p>
-                <p className="tnum mt-1 text-[13px] text-dim">× {records.maxWeight.reps}</p>
-                <p className="mt-1.5 text-[11px] text-faint">
-                  {formatDateShort(records.maxWeight.date)}
-                </p>
-              </>
-            ) : (
-              <p className="mt-1.5 text-[13px] text-dim">Нет данных</p>
-            )}
+            <span className="block text-[10.5px] font-semibold tracking-[0.12em] text-dim uppercase">
+              Рекорд
+            </span>
+            <span className="tnum mt-0.5 block text-[14px] font-medium text-accent">
+              {records?.maxWeight
+                ? `${formatWeight(records.maxWeight.value)} × ${records.maxWeight.reps}`
+                : '—'}
+            </span>
           </button>
         </div>
 
         {/* SET EXECUTION */}
         {targetSet ? (
-          <Card className="p-4">
-            <div className="flex items-baseline justify-between">
-              <Eyebrow>
-                Подход {targetSet.setNumber} из {entry.sets.length}
-              </Eyebrow>
+          <Card className="p-3.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <p className="tnum text-[12px] text-dim">
+                Подход {targetSet.setNumber} · план {formatWeight(targetSet.plan.weight)} кг ×{' '}
+                {formatRepRange(targetSet.plan.repsMin, targetSet.plan.repsMax)}
+              </p>
               {targetSet.setType !== 'normal' ? (
                 <Badge color="var(--status-warning)">{targetSet.setType.replace('_', ' ')}</Badge>
               ) : null}
             </div>
 
             {targetSet.note ? (
-              <p className="mt-1.5 text-[12.5px] text-warn">{targetSet.note}</p>
+              <p className="mt-1 text-[12.5px] text-warn">{targetSet.note}</p>
             ) : null}
 
-            <p className="tnum mt-1 text-[12px] text-dim">
-              План: {formatWeight(targetSet.plan.weight)} кг ×{' '}
-              {formatRepRange(targetSet.plan.repsMin, targetSet.plan.repsMax)}
-            </p>
-
-            <div className="mt-5 flex flex-col gap-5">
+            <div className="mt-3 flex flex-col gap-3">
               <BigStepper
                 label="Вес"
                 unit="кг"
@@ -303,6 +380,24 @@ function ExerciseWorkout() {
                   setEditDraft(String(weight));
                 }}
               />
+
+              {/*
+                §8: готовые дельты вместо многократных нажатий ±. Нажатая дельта
+                заодно запоминается как шаг ±, поэтому «обычно я добавляю 2.5»
+                настраивается само, без похода в настройки.
+              */}
+              <div className="flex justify-center gap-1.5">
+                {WEIGHT_DELTAS.map((delta) => (
+                  <Chip
+                    key={delta}
+                    selected={settings.weightStep === Math.abs(delta)}
+                    onClick={() => applyWeightDelta(delta)}
+                  >
+                    {delta > 0 ? `+${delta}` : delta}
+                  </Chip>
+                ))}
+              </div>
+
               <BigStepper
                 label="Повторения"
                 unit="повт."
@@ -314,25 +409,26 @@ function ExerciseWorkout() {
                   setEditDraft(String(reps));
                 }}
               />
+
+              <div className="flex justify-center gap-1.5">
+                {REP_DELTAS.map((delta) => (
+                  <Chip key={delta} onClick={() => setReps(Math.max(0, reps + delta))}>
+                    {delta > 0 ? `+${delta}` : delta}
+                  </Chip>
+                ))}
+                {history ? (
+                  <Chip onClick={repeatLast}>ПОВТОРИТЬ</Chip>
+                ) : null}
+              </div>
             </div>
 
-            <div className="mt-4 flex flex-wrap justify-center gap-1.5">
-              {[1, 2.5, 5].map((step) => (
-                <Chip
-                  key={step}
-                  selected={settings.weightStep === step}
-                  onClick={() => useStore.getState().updateSettings({ weightStep: step })}
-                >
-                  ± {step} кг
-                </Chip>
-              ))}
-            </div>
-
-            <div className="mt-5">
-              <Eyebrow className="mb-2 text-center">Насколько тяжело</Eyebrow>
+            {/*
+              §13: оценка не должна конкурировать с весом и повторениями — это
+              третий уровень, поэтому ниже и мельче.
+            */}
+            <div className="mt-3.5">
               <DifficultyPicker value={difficulty} onChange={setDifficulty} />
             </div>
-
           </Card>
         ) : (
           <Card className="p-5 text-center">
@@ -470,7 +566,11 @@ function ExerciseWorkout() {
         >
           <div className="mx-auto w-full max-w-lg">
             <Button variant="primary" size="xl" full onClick={save}>
-              {targetSet.actual ? 'ОБНОВИТЬ ПОДХОД ✓' : 'СОХРАНИТЬ ПОДХОД ✓'}
+              {justSaved
+                ? 'ПОДХОД СОХРАНЁН ✓'
+                : targetSet.actual
+                  ? 'ОБНОВИТЬ ПОДХОД ✓'
+                  : 'СОХРАНИТЬ ПОДХОД ✓'}
             </Button>
           </div>
         </div>

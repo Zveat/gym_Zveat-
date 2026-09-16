@@ -318,6 +318,12 @@ export interface Settings {
   defaultRestSeconds: number;
   hapticsEnabled: boolean;
   restTimerAutoStart: boolean;
+  /**
+   * §37: после последнего подхода упражнения сразу открывать следующее.
+   * Включено по умолчанию — это и есть смысл тренировочного режима. Но именно
+   * настройкой, а не намертво: автоматика, которую нельзя выключить, бесит.
+   */
+  autoAdvanceExercise: boolean;
   bodyWeightGoal: BodyWeightGoal;
   activeProgramId: ID | null;
   modes: Record<WorkoutMode, ModeConfig>;

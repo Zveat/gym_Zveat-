@@ -46,12 +46,14 @@ async function main() {
   await page.click('button:has-text("Обычная")');
   await page.click('button:has-text("НАЧАТЬ ТРЕНИРОВКУ")');
   await page.waitForURL(/\/workout$/);
-  await page.waitForSelector('text=Выполнено упражнений');
+  await page.waitForSelector('text=подходов · упражнений');
   body = await text();
   check('shows the workout clock', /\d\d:\d\d/.test(body));
   check('lists day 1 exercises', has(body, 'Жим штанги лежа', 'Разводка в тренажере'));
   check('marks the current exercise', has(body, 'Сейчас'));
-  check('starts at zero progress', has(body, 'Выполнено упражнений: 0 из 5'));
+  // §3: счётчик подходов рядом с упражнениями — «8 / 28» конкретнее, чем
+  // «выполнено 2 из 7»: человек между подходами думает подходами.
+  check('starts at zero progress', has(body, '0 / 21 подходов', 'упражнений 0 из 5'), body.slice(0, 160));
   check('hides the bottom nav during a workout', (await page.locator('nav a:has-text("Programs")').count()) === 0);
 
   console.log('\nEXERCISE SCREEN');
@@ -59,7 +61,9 @@ async function main() {
   await page.waitForURL(/\/workout\/exercise/);
   await page.waitForSelector('text=СОХРАНИТЬ ПОДХОД');
   body = await text();
-  check('shows the plan from the program', has(body, 'План: 50 кг × 12'));
+  // Номер подхода и план — одной строкой: раньше это были три строки подряд,
+  // и они съедали место у веса, который должен быть главным объектом экрана.
+  check('shows the set number and the plan in one line', has(body, 'Подход 1 · план 50 кг × 12'), body.slice(0, 160));
   check('offers the exercise detail sheet', has(body, 'Инфо'));
   check('shows "first time" with no history', has(body, 'Первый раз'));
   check('offers the difficulty picker', has(body, 'ЛЕГКО', 'НОРМА', 'ТЯЖЕЛО', 'ОТКАЗ'));
@@ -76,17 +80,27 @@ async function main() {
   await page.click('button[aria-label="Плюс 2.5"]'); // 50 -> 52.5
   await page.click('button:has-text("НОРМА")');
   await page.click('button:has-text("СОХРАНИТЬ ПОДХОД")');
-  await page.waitForSelector('button:text-is("+30 СЕК")', { timeout: 5000 });
+  await page.waitForSelector('button:text-is("+15 СЕК")', { timeout: 5000 });
   body = await text();
   check('starts the rest timer automatically', has(body, 'Отдых'));
   check('counts the rest down from the exercise rest time', /0[12]:\d\d/.test(body));
-  check('offers +30 sec and skip', has(body, '+30 СЕК', 'ПРОПУСТИТЬ'));
+  // §5: подрезать и удлинять одинаково быстро, плюс готовые длительности —
+  // менять отдых под упражнение, не уходя в настройки.
+  check('offers minus and plus fifteen', has(body, '−15 СЕК', '+15 СЕК'));
+  check('offers the rest presets', has(body, '60 с', '90 с', '120 с', '180 с'));
+  check('offers skip', has(body, 'ПРОПУСТИТЬ'));
+
+  // Готовое значение ставит отсчёт заново от этого момента.
+  await page.click('button:has-text("120 с")');
+  await page.waitForTimeout(250);
+  body = await text();
+  check('a preset restarts the countdown at that length', /01:5\d|02:0[01]/.test(body), body.match(/0\d:\d\d/)?.[0] ?? '');
 
   await page.click('button:text-is("ПРОПУСТИТЬ")');
   await page.waitForSelector('button:has-text("СОХРАНИТЬ ПОДХОД")');
   body = await text();
   check('records the actual weight, not the plan', has(body, '52.5 × 12'));
-  check('moves on to set 2 of 4', has(body, 'Подход 2 из 4'));
+  check('moves on to set 2', has(body, 'Подход 2 · план'), body.slice(0, 140));
 
   // ГЛАВНАЯ МЕТРИКА ТЗ: сколько действий на обычный подход. Цель — один тап,
   // и всё ломалось здесь: следующий подход заполнялся из ПЛАНА, поэтому
@@ -136,13 +150,13 @@ async function main() {
   await page.click('a[aria-label="К списку упражнений"]');
   await page.waitForURL(/\/workout$/);
   body = await text();
-  check('workout progress reflects the finished exercise', has(body, 'Выполнено упражнений: 1 из 5'));
+  check('workout progress reflects the finished exercise', has(body, 'упражнений 1 из 5'));
 
   console.log('\nRELOAD MID-WORKOUT');
   await page.reload({ waitUntil: 'networkidle' });
-  await page.waitForSelector('text=Выполнено упражнений');
+  await page.waitForSelector('text=подходов · упражнений');
   body = await text();
-  check('a live workout survives a reload', has(body, 'Выполнено упражнений: 1 из 5'));
+  check('a live workout survives a reload', has(body, 'упражнений 1 из 5'));
 
   console.log('\nFINISH THE WORKOUT');
   await page.click('button:has-text("ЗАВЕРШИТЬ ТРЕНИРОВКУ")');
