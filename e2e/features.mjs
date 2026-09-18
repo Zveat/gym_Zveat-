@@ -17,6 +17,23 @@ import {
 
 const PORT = Number(process.env.SMOKE_PORT ?? 4320);
 
+/**
+ * Дата за N дней до сегодня, «ГГГГ-ММ-ДД».
+ *
+ * Раньше прошлое взвешивание стояло жёстким числом «2026-09-02» — оно было
+ * ровно двумя неделями раньше в день, когда писалось, и расползалось с
+ * каждым следующим. А от промежутка теперь зависит, что приложение вообще
+ * говорит: скорость веса считается от 5 дней, расклад на жир и мышцы — от
+ * 14, и на тридцати днях окно скорости уже отбрасывает замер. Проверка
+ * обязана задавать промежуток, а не унаследовать его от календаря.
+ */
+function daysAgo(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  const p = (x) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 /** A real .xlsx (ZIP + deflate), built here so the test needs no fixture file. */
 const XLSX_FIXTURE = buildXlsx([
   ['Date', 'Exercise', 'Weight', 'Reps'],
@@ -327,8 +344,8 @@ async function main() {
   await page.waitForTimeout(300);
   check('it says what is missing before it can judge', /нечего оценивать/i.test(await goalBlock()), (await goalBlock()).slice(0, 70));
 
-  // Второе взвешивание двумя неделями раньше: +0.8 кг за 14 дней = +0.4 кг/нед.
-  await page.fill('input[type="date"]', '2026-09-02');
+  // Второе взвешивание шестнадцатью днями раньше: +0.8 кг = +0.35 кг/нед.
+  await page.fill('input[type="date"]', daysAgo(16));
   await page.fill('input[placeholder="80.2"]', '79.4');
   await page.click('button:has-text("ДОБАВИТЬ")');
   await page.waitForTimeout(400);
@@ -1133,7 +1150,7 @@ async function main() {
     await page.waitForTimeout(400);
   };
 
-  await weigh('2026-09-02', 83.1, 24.8);
+  await weigh(daysAgo(16), 83.1, 24.8);
   await weigh(today, 85.2, 26.0, 10);
   body = await text();
 
@@ -1155,7 +1172,7 @@ async function main() {
    * прошлом, за окном тридцати дней: иначе он стал бы самым ранним замером
    * окна и снёс бы расклад состава, который только что проверили.
    */
-  await weigh('2026-01-15', 78.0);
+  await weigh(daysAgo(246), 78.0);
   body = await text();
   check(
     'a plain weigh-in with no body-fat still works and keeps the split',
@@ -1189,6 +1206,60 @@ async function main() {
   await page.waitForTimeout(400);
   const refilled = await page.locator('input[placeholder="80.2"]').inputValue();
   check('tapping a record loads it back into the form', refilled === '78', refilled);
+
+  /*
+   * ПРОЦЕНТУ ЖИРА ВЕРЯТ НЕ ВСЕГДА.
+   *
+   * Владелец: «я по жиру тоже чет не особо верю, сейчас взвесился и уже
+   * данные 86,1 вес, жир 22,6 за 3 дня» — против 26,0 тремя днями раньше.
+   * Это −3,4 пункта, то есть якобы 2,9 кг жира за три дня при растущем весе.
+   * Приложение обязано сказать, что это разброс весов, а не раскладывать
+   * шум на «жир» и «сухую массу» с уверенным лицом.
+   *
+   * Правим процент жира на раннем замере — он и есть один из двух концов,
+   * по которым считается расклад.
+   */
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await weigh(daysAgo(16), 83.1, 32.0);
+  const goalText = async () =>
+    page.evaluate(() => {
+      const heading = [...document.querySelectorAll('*')].find(
+        (el) => el.textContent.trim() === 'Цель' && el.children.length === 0,
+      );
+      return heading?.closest('section')?.innerText ?? '';
+    });
+  const noisy = await goalText();
+  check(
+    'an impossible jump in body fat is called out, not split into fat and muscle',
+    /разброс весов/.test(noisy) && !/Из них/.test(noisy),
+    noisy.slice(0, 320),
+  );
+  check(
+    'and it names the numbers it refuses to trust',
+    /32\.0% → 26\.0%/.test(noisy) && /в неделю/.test(noisy),
+    noisy.slice(0, 320),
+  );
+
+  /*
+   * Причина — не вывод, и набирается иначе. Расклад стоит жирным, объяснение
+   * «почему расклада нет» — приглушённым: глаз читает шрифт раньше слов, и
+   * набрать отказ так же, как утверждение, значит соврать шрифтом.
+   */
+  const weights = await page.evaluate(() => {
+    const line = [...document.querySelectorAll('span')].find((el) =>
+      el.textContent.includes('разброс весов'),
+    );
+    return line ? getComputedStyle(line).fontWeight : null;
+  });
+  check('the reason is not typeset as loudly as a conclusion', weights === '400', String(weights));
+
+  // Возвращаем настоящий замер: дальше проверки идут по нему.
+  await weigh(daysAgo(16), 83.1, 24.8);
+  check(
+    'with a believable percentage the split comes back',
+    /жир \+1\.6 кг/.test(await goalText()),
+    (await goalText()).slice(0, 240),
+  );
 
   const bwOverflow = await assertNoHorizontalOverflow(page);
   check('/more/body-weight fits with the new fields', bwOverflow === null, bwOverflow ?? '');

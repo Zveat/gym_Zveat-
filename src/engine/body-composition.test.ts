@@ -3,8 +3,10 @@ import type { BodyWeightLog } from '@/domain/types';
 import { bodyWeightVerdict } from './analytics';
 import {
   compositionChange,
+  compositionVerdict,
   describeComposition,
   fatMass,
+  implausibleFatDrift,
   leanMass,
 } from './body-composition';
 
@@ -97,12 +99,82 @@ describe('чем набран вес', () => {
   });
 });
 
+/**
+ * ДВА ПОРОГА ДОВЕРИЯ.
+ *
+ * Владелец сказал прямо: проценту жира он не верит — «сейчас взвесился и уже
+ * данные 86,1 вес, жир 22,6 за 3 дня» против 26,0 тремя днями раньше. Это
+ * −3,4 пункта, то есть 2,9 кг жира за три дня при РАСТУЩЕМ весе. Так не
+ * бывает, и приложение теперь тоже это знает.
+ */
+describe('приложение не раскладывает шум', () => {
+  it('ловит невозможный скачок процента жира', () => {
+    const drift = implausibleFatDrift(log('2026-09-12', 85.2, 26.0), log('2026-09-15', 86.1, 22.6), 3)!;
+    expect(drift.points).toBe(-3.4);
+    // 3,4 пункта за 3 дня — это 7,9 пункта в неделю.
+    expect(drift.perWeek).toBe(7.9);
+  });
+
+  it('не придирается к движению в пределах возможного', () => {
+    // Пункт за две недели — полпункта в неделю, это реальный темп.
+    expect(implausibleFatDrift(log('2026-09-01', 85, 26), log('2026-09-15', 84, 25), 14)).toBeNull();
+  });
+
+  it('на настоящих цифрах владельца говорит, что это разброс весов', () => {
+    const v = compositionVerdict(log('2026-09-12', 85.2, 26.0), log('2026-09-15', 86.1, 22.6))!;
+    expect(v.kind).toBe('noisy');
+    const line = v.text;
+    expect(line).toContain('26.0% → 22.6%');
+    expect(line).toContain('−3.4 пункта');
+    expect(line).toContain('7.9 в неделю');
+    expect(line).toContain('разброс весов');
+    // И главное: никакого расклада на жир и мышцы здесь нет.
+    expect(line).not.toContain('Из них');
+  });
+
+  it('на коротком промежутке называет порог, а не выдумывает расклад', () => {
+    // Движение по жиру нормальное (0,3 пункта за 5 дней), но пяти дней мало.
+    const v = compositionVerdict(log('2026-09-10', 84.0, 25.7), log('2026-09-15', 85.2, 26.0))!;
+    expect(v.kind).toBe('short-span');
+    const line = v.text;
+    expect(line).toContain('от 14 дней');
+    expect(line).toContain('здесь 5 дней');
+    expect(line).not.toContain('Из них');
+  });
+
+  it('с двух недель раскладывает как раньше', () => {
+    const v = compositionVerdict(log('2026-09-01', 85, 26), log('2026-09-15', 83, 24))!;
+    expect(v.kind).toBe('split');
+    expect(v.text).toBe('Из них жир −2.2 кг, сухая +0.2 кг.');
+  });
+
+  it('без процента жира строки нет вообще', () => {
+    expect(compositionVerdict(log('2026-09-01', 85), log('2026-09-15', 83))).toBeNull();
+  });
+});
+
 describe('вердикт по цели использует состав', () => {
-  it('на наборе добавляет строку про жир', () => {
-    const v = bodyWeightVerdict([FIVE_DAYS_AGO, NOW], 'bulk', new Date('2026-09-15T12:00:00'));
-    // +2,1 за 5 дней = +2,94 кг/нед, это далеко за коридором 0,2…0,6.
+  it('на наборе с двух недель добавляет строку про жир', () => {
+    const v = bodyWeightVerdict(
+      [log('2026-09-01', 83.1, 25.7), log('2026-09-15', 85.2, 26.0)],
+      'bulk',
+      new Date('2026-09-15T12:00:00'),
+    );
+    // +2,1 за 14 дней = +1,05 кг/нед, это за коридором 0,2…0,6.
     expect(v.kind).toBe('fast');
-    expect(v.composition).toBe('Из них жир +1.6 кг, сухая +0.5 кг.');
+    expect(v.composition).toBe('Из них жир +0.8 кг, сухая +1.3 кг.');
+    expect(v.compositionKind).toBe('split');
+  });
+
+  it('за пять дней вердикт по скорости остаётся, а расклада нет', () => {
+    const v = bodyWeightVerdict([FIVE_DAYS_AGO, NOW], 'bulk', new Date('2026-09-15T12:00:00'));
+    // Скорость веса считается от 5 дней и по-прежнему считается.
+    expect(v.kind).toBe('fast');
+    expect(v.detail).toContain('+2.94 кг/нед');
+    // А вот процент жира за эти пять дней прыгнул на 1,2 пункта — расклада не будет.
+    expect(v.composition).not.toContain('Из них');
+    expect(v.composition).toContain('разброс весов');
+    expect(v.compositionKind).toBe('noisy');
   });
 
   it('без процента жира вердикт работает как раньше и молчит про состав', () => {
@@ -117,13 +189,13 @@ describe('вердикт по цели использует состав', () =>
 
   it('состав считается по тем же двум взвешиваниям, что и скорость', () => {
     const v = bodyWeightVerdict(
-      [log('2026-08-01', 80, 22), FIVE_DAYS_AGO, NOW],
+      [log('2026-08-01', 80, 22), log('2026-09-01', 83.1, 25.7), log('2026-09-15', 85.2, 26.0)],
       'bulk',
       new Date('2026-09-15T12:00:00'),
     );
     // Окно скорости — 30 дней, значит 01.08 выпадает, и раскладывается
-    // ровно тот же промежуток 10.09 → 15.09.
-    expect(v.composition).toBe('Из них жир +1.6 кг, сухая +0.5 кг.');
+    // ровно тот же промежуток 01.09 → 15.09, а не весь август.
+    expect(v.composition).toBe('Из них жир +0.8 кг, сухая +1.3 кг.');
   });
 
   it('когда оценивать нечего, состава тоже нет', () => {

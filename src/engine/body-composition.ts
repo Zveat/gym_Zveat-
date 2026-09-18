@@ -1,4 +1,5 @@
 import type { BodyWeightLog } from '@/domain/types';
+import { count, WORDS } from './format';
 
 /**
  * СОСТАВ ТЕЛА ИЗ ДВУХ ЦИФР.
@@ -91,6 +92,50 @@ export function compositionChange(
  */
 export const COMPOSITION_NOISE_KG = 0.2;
 
+/**
+ * СКОЛЬКО ДНЕЙ НУЖНО, ЧТОБЫ РАСКЛАД ЧТО-ТО ЗНАЧИЛ.
+ *
+ * Вес весы меряют точно, ±100 г. Процент жира — нет: погрешность
+ * биоимпеданса около ±3 процентных пунктов, и суточные колебания от воды,
+ * еды и времени замера дают ещё 1–3. За три дня реальный состав тела
+ * меняется на десятые доли процента — то есть шум больше сигнала в
+ * несколько раз.
+ *
+ * У владельца это вышло в чистом виде: 26,0% и через три дня 22,6%. Это
+ * −3,4 пункта, то есть якобы 2,9 кг жира за три дня при РАСТУЩЕМ весе.
+ * Разложение такой разницы на «жир» и «сухую массу» — разложение шума.
+ *
+ * Поэтому у скорости веса свой порог (5 дней), а у расклада свой, больше.
+ */
+export const MIN_COMPOSITION_SPAN_DAYS = 14;
+
+/**
+ * Быстрее этого процент жира не меняется — значит это шум весов.
+ *
+ * Пункт в неделю уже очень быстро; всё, что выше, объясняется гидратацией и
+ * условиями замера, а не жиром.
+ */
+export const MAX_PLAUSIBLE_FAT_DRIFT_PER_WEEK = 1;
+
+/**
+ * Скачок процента жира, которого не бывает. `null` — всё в пределах
+ * возможного, говорить не о чем.
+ */
+export function implausibleFatDrift(
+  from: BodyWeightLog,
+  to: BodyWeightLog,
+  days: number,
+): { points: number; perWeek: number } | null {
+  const a = from.bodyFatPercent;
+  const b = to.bodyFatPercent;
+  if (a == null || b == null || days <= 0) return null;
+
+  const points = Math.round((b - a) * 10) / 10;
+  const perWeek = (Math.abs(b - a) / days) * 7;
+  if (perWeek <= MAX_PLAUSIBLE_FAT_DRIFT_PER_WEEK) return null;
+  return { points, perWeek: Math.round(perWeek * 10) / 10 };
+}
+
 export function describeComposition(change: CompositionChange): string {
   const signed = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n).toFixed(1)}`;
   const fat = `жир ${signed(change.fat)} кг`;
@@ -100,4 +145,59 @@ export function describeComposition(change: CompositionChange): string {
     return 'Состав тела не изменился.';
   }
   return `Из них ${fat}, ${lean}.`;
+}
+
+
+/**
+ * ОДНА СТРОКА ПОД ВЕРДИКТОМ: либо расклад, либо честная причина, почему его
+ * здесь нет. `null` — процента жира нет хотя бы на одном конце, тогда и
+ * говорить не о чем: строка не появляется вовсе.
+ *
+ * Порядок проверок именно такой. Сначала — не врут ли сами весы: скачок в
+ * три пункта за три дня остаётся скачком и на промежутке в месяц, и
+ * раскладывать его нельзя ни при каком числе дней. Потом — хватает ли
+ * промежутка. И только после этого считается сам расклад.
+ */
+export interface CompositionVerdict {
+  /**
+   * `split` — расклад посчитан, ему можно верить.
+   * `noisy` — весы дали скачок по жиру, которого не бывает.
+   * `short-span` — промежутка мало, чтобы разложение что-то значило.
+   *
+   * Экрану это нужно, чтобы не набирать причину тем же жирным шрифтом, что
+   * и сам расклад: одно — вывод, другое — объяснение, почему вывода нет.
+   */
+  kind: 'split' | 'noisy' | 'short-span';
+  text: string;
+}
+
+export function compositionVerdict(from: BodyWeightLog, to: BodyWeightLog): CompositionVerdict | null {
+  const change = compositionChange(from, to);
+  if (!change) return null;
+
+  const drift = implausibleFatDrift(from, to, change.days);
+  if (drift) {
+    const a = (from.bodyFatPercent as number).toFixed(1);
+    const b = (to.bodyFatPercent as number).toFixed(1);
+    const moved = `${drift.points > 0 ? '+' : '−'}${Math.abs(drift.points).toFixed(1)}`;
+    return {
+      kind: 'noisy',
+      text:
+        `Жир по весам ${a}% → ${b}% за ${count(change.days, WORDS.day)}: ${moved} пункта, ` +
+        `${drift.perWeek.toFixed(1)} в неделю. Так быстро жир не меняется — это разброс весов, ` +
+        'а не состав тела, и раскладывать по нему нечего.',
+    };
+  }
+
+  if (change.days < MIN_COMPOSITION_SPAN_DAYS) {
+    return {
+      kind: 'short-span',
+      text:
+        `Расклад на жир и мышцы считается от ${MIN_COMPOSITION_SPAN_DAYS} дней между ` +
+        `взвешиваниями, здесь ${count(change.days, WORDS.day)}: процент жира гуляет сильнее, ` +
+        'чем за это время меняется состав.',
+    };
+  }
+
+  return { kind: 'split', text: describeComposition(change) };
 }

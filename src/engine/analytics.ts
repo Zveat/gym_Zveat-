@@ -1,4 +1,4 @@
-import { compositionChange, describeComposition } from './body-composition';
+import { compositionVerdict, type CompositionVerdict } from './body-composition';
 import type {
   BodyWeightGoal,
   Difficulty,
@@ -428,13 +428,19 @@ export interface BodyWeightVerdict {
   detail: string;
   /**
    * Чем набран или сброшен вес — отдельной строкой, когда процент жира есть
-   * на обоих взвешиваниях.
+   * на обоих взвешиваниях. Если промежутка мало или весы дали невозможный
+   * скачок по жиру, в этой же строке стоит причина, а не выдуманный расклад.
    *
    * Отдельным полем, а не внутри `detail`: вердикт по скорости верен и без
    * состава, и подмешивать одно в другое значило бы, что при отсутствии
    * процента жира текст пришлось бы собирать иначе.
    */
   composition?: string;
+  /**
+   * Что именно стоит в `composition`: вывод (`split`) или причина, по которой
+   * вывода нет. Экран набирает их по-разному.
+   */
+  compositionKind?: CompositionVerdict['kind'];
 }
 
 export function bodyWeightVerdict(
@@ -447,9 +453,13 @@ export function bodyWeightVerdict(
   /*
    * Состав считается по ТЕМ ЖЕ двум взвешиваниям, что и скорость, — иначе
    * строки под одним вердиктом говорили бы о разных промежутках.
+   *
+   * Но порог у состава СВОЙ и больше: вес весы меряют точно, процент жира —
+   * нет. Поэтому скорость считается от 5 дней, а расклад — от 14, и решает
+   * это `compositionVerdict`, а не этот файл.
    */
-  const split = rate ? compositionChange(rate.from, rate.to) : null;
-  const composition = split ? { composition: describeComposition(split) } : {};
+  const split = rate ? compositionVerdict(rate.from, rate.to) : null;
+  const composition = split ? { composition: split.text, compositionKind: split.kind } : {};
 
   if (!rate) {
     return {

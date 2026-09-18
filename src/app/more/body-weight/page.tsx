@@ -239,9 +239,21 @@ export default function BodyWeightPage() {
             Чем именно набран вес — отдельной строкой, и это главное, что
             даёт процент жира. «+2,1 кг» не говорит, правильно ли идёт
             набор; «+2,1 кг, из них жир +1,6» говорит всё.
+
+            Но если расклада нет, здесь стоит ПРИЧИНА, и набирать её тем же
+            жирным шрифтом нельзя: вывод и объяснение, почему вывода нет, —
+            разные по весу вещи, а глаз читает шрифт раньше слов.
           */}
           {verdict.composition ? (
-            <span className="mt-1.5 block font-medium text-ink">{verdict.composition}</span>
+            <span
+              className={
+                verdict.compositionKind === 'split'
+                  ? 'mt-1.5 block font-medium text-ink'
+                  : 'mt-1.5 block text-[12px] leading-relaxed text-dim'
+              }
+            >
+              {verdict.composition}
+            </span>
           ) : null}
         </Notice>
       </section>
