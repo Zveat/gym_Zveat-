@@ -119,8 +119,18 @@ export default function BodyWeightPage() {
       <ScreenHeader title="Вес тела" back="/more" />
 
       <Card className="p-4">
+        {/*
+          ТРИ ЧИСЛА В РЯД, ДАТА — СВОЕЙ СТРОКОЙ.
+          Поле даты iOS рисует по локали, и «18 сент. 2026 г.» заметно шире
+          короткого «дд.мм.гггг», который показывает Chromium. Рядом с весом
+          в общей строке оно вылезало за карточку: `flex-1` не даёт элементу
+          сжаться ниже содержимого (`min-width: auto`), и в браузере на
+          компьютере этого не видно вообще. Поэтому дате — вся ширина, а
+          числа стоят вместе, как их и читаешь с весов. `min-w-0` оставлен
+          на всякий случай: он снимает то самое ограничение.
+        */}
         <div className="flex items-end gap-2">
-          <Field label="Вес, кг" className="flex-1">
+          <Field label="Вес, кг" className="min-w-0 flex-1">
             <TextInput
               type="number"
               inputMode="decimal"
@@ -131,10 +141,32 @@ export default function BodyWeightPage() {
               className="tnum text-[20px]"
             />
           </Field>
-          <Field label="Дата" className="flex-1">
-            <TextInput type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          <Field label="Жир, %" className="min-w-0 flex-1">
+            <TextInput
+              type="number"
+              inputMode="decimal"
+              step="0.1"
+              value={fat}
+              onChange={(e) => setFat(e.target.value)}
+              placeholder="26.0"
+              className="tnum text-[20px]"
+            />
+          </Field>
+          <Field label="Висц. жир" className="min-w-0 flex-1">
+            <TextInput
+              type="number"
+              inputMode="decimal"
+              step="1"
+              value={visceral}
+              onChange={(e) => setVisceral(e.target.value)}
+              placeholder="10"
+              className="tnum text-[20px]"
+            />
           </Field>
         </div>
+        <Field label="Дата" className="mt-2">
+          <TextInput type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        </Field>
         {/*
           Процент жира и висцеральный — с умных весов, поэтому НЕобязательные:
           взвесился в зале на обычных — вводишь только вес, и вердикт по
@@ -143,30 +175,6 @@ export default function BodyWeightPage() {
           чисел — вводить это руками значит делать лишнюю работу на каждом
           взвешивании.
         */}
-        <div className="mt-2 flex items-end gap-2">
-          <Field label="Жир, %" className="flex-1">
-            <TextInput
-              type="number"
-              inputMode="decimal"
-              step="0.1"
-              value={fat}
-              onChange={(e) => setFat(e.target.value)}
-              placeholder="26.0"
-              className="tnum"
-            />
-          </Field>
-          <Field label="Висцеральный" className="flex-1">
-            <TextInput
-              type="number"
-              inputMode="decimal"
-              step="1"
-              value={visceral}
-              onChange={(e) => setVisceral(e.target.value)}
-              placeholder="10"
-              className="tnum"
-            />
-          </Field>
-        </div>
         <p className="mt-1.5 px-0.5 text-[11.5px] leading-relaxed text-dim">
           Жир и висцеральный — с умных весов, можно не заполнять. Массу жира и сухую массу
           приложение посчитает само.
@@ -295,7 +303,21 @@ export default function BodyWeightPage() {
               />
             </div>
             <Card className="mt-2 p-4">
-              <LineTrend data={series} unit="кг" height={200} color="var(--status-info)" />
+              {/*
+                Подпись про ПЕРИОД, а не «нужна ещё одна точка»: у владельца
+                два замера, но второй вне месяца — и график требовал третий.
+              */}
+              <LineTrend
+                data={series}
+                unit="кг"
+                height={200}
+                color="var(--status-info)"
+                singleLabel={
+                  logs.length > 1
+                    ? 'В этом периоде один замер. Выберите «3 мес» или «Всё» — остальные там.'
+                    : 'Нужно второе взвешивание, чтобы показать динамику.'
+                }
+              />
             </Card>
           </section>
 

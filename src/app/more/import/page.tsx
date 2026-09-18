@@ -415,13 +415,19 @@ export default function ImportPage() {
               {preview.map((workout, workoutIndex) => (
                 <li key={workoutIndex}>
                   <Card className="p-4">
-                    <div className="flex items-center gap-2">
+                    {/*
+                      `min-w-0` и перенос: поле даты iOS рисует по локали, и
+                      «7 авг. 2026 г.» шире короткого «дд.мм.гггг» из
+                      Chromium. Без этого оно выдавливает плашку дня за край,
+                      и на компьютере такого не увидеть.
+                    */}
+                    <div className="flex flex-wrap items-center gap-2">
                       <TextInput
                         type="date"
                         value={workout.date ?? ''}
                         onChange={(e) => patchWorkout(workoutIndex, { date: e.target.value || null })}
                         density="compact"
-                        className={cx('flex-1', !workout.date && 'border-warn/60')}
+                        className={cx('min-w-0 flex-1', !workout.date && 'border-warn/60')}
                       />
                       {workout.dayName ? <Badge>{workout.dayName}</Badge> : null}
                     </div>

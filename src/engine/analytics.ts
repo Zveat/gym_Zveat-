@@ -573,12 +573,27 @@ export function bodyWeightStats(logs: BodyWeightLog[], now: Date = new Date()): 
   const latest = sorted[0] ?? null;
   if (!latest) return { latest: null, change7d: null, change30d: null };
 
+  /*
+   * ИЗМЕНЕНИЕ ЗА ПЕРИОД — ТОЛЬКО ПО ЗАМЕРАМ ВНУТРИ ПЕРИОДА.
+   *
+   * Раньше бралась первая запись СТАРШЕ отсечки, без ограничения по
+   * давности: у владельца с замерами 1 августа (81 кг) и 15 сентября (85,2)
+   * плитка «7 дней» показывала +4,2 — разницу за сорок пять дней. Число
+   * выглядело как ответ, а отвечало на другой вопрос.
+   *
+   * Берём самый ранний замер ВНУТРИ окна и сравниваем с последним. Если в
+   * окне только сам последний замер, сравнивать не с чем — прочерк, а не
+   * подстановка чего попало. «Прочерк» здесь честнее любого числа: за
+   * неделю человек просто не взвешивался.
+   */
   const at = (days: number) => {
     const cutoff = new Date(now);
     cutoff.setDate(cutoff.getDate() - days);
     const target = iso(cutoff);
-    const found = sorted.find((l) => l.date <= target);
-    return found ? Math.round((latest.weight - found.weight) * 10) / 10 : null;
+    const inWindow = sorted.filter((l) => l.date >= target);
+    const oldest = inWindow[inWindow.length - 1];
+    if (!oldest || oldest.date === latest.date) return null;
+    return Math.round((latest.weight - oldest.weight) * 10) / 10;
   };
 
   return { latest, change7d: at(7), change30d: at(30) };

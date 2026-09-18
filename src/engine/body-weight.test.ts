@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { bodyWeightRate, bodyWeightVerdict, GOAL_BANDS, MIN_RATE_SPAN_DAYS } from './analytics';
+import {
+  bodyWeightRate,
+  bodyWeightStats,
+  bodyWeightVerdict,
+  GOAL_BANDS,
+  MIN_RATE_SPAN_DAYS,
+} from './analytics';
 import type { BodyWeightLog } from '@/domain/types';
 
 const NOW = new Date('2026-09-16T09:00:00Z');
@@ -130,5 +136,50 @@ describe('вердикт по цели', () => {
     expect(at(logs, 'bulk').kind).toBe('ok');
     expect(at(logs, 'cut').kind).toBe('wrong-way');
     expect(at(logs, 'maintain').kind).toBe('fast');
+  });
+});
+
+describe('изменение за период считается только по замерам внутри периода', () => {
+  /**
+   * НАСТОЯЩИЙ СЛУЧАЙ ВЛАДЕЛЬЦА. Замеры 1 августа (81 кг) и 15 сентября
+   * (85,2 кг), сегодня 18 сентября. Плитка «7 дней» показывала +4,2 —
+   * разницу за сорок пять дней, потому что бралась первая запись СТАРШЕ
+   * отсечки, без ограничения по давности.
+   */
+  const TODAY = new Date('2026-09-18T12:00:00');
+  const OWNER = [log('2026-08-01', 81), log('2026-09-15', 85.2)];
+
+  it('не выдаёт разницу за 45 дней как изменение за 7', () => {
+    expect(bodyWeightStats(OWNER, TODAY).change7d).toBeNull();
+  });
+
+  it('и за 30 тоже: 1 августа вне окна', () => {
+    expect(bodyWeightStats(OWNER, TODAY).change30d).toBeNull();
+  });
+
+  it('последний замер при этом показывается', () => {
+    expect(bodyWeightStats(OWNER, TODAY).latest?.weight).toBe(85.2);
+  });
+
+  it('когда в окне два замера — считает по ним', () => {
+    const logs = [log('2026-09-13', 84), log('2026-09-17', 85)];
+    expect(bodyWeightStats(logs, TODAY).change7d).toBe(1);
+  });
+
+  it('базой берёт САМЫЙ РАННИЙ замер окна, а не предпоследний', () => {
+    const logs = [log('2026-09-13', 84), log('2026-09-15', 84.5), log('2026-09-17', 85)];
+    // 85 − 84, а не 85 − 84.5.
+    expect(bodyWeightStats(logs, TODAY).change7d).toBe(1);
+  });
+
+  it('за 30 дней окно шире, значит и база другая', () => {
+    const logs = [log('2026-08-25', 82), log('2026-09-13', 84), log('2026-09-17', 85)];
+    expect(bodyWeightStats(logs, TODAY).change7d).toBe(1);
+    expect(bodyWeightStats(logs, TODAY).change30d).toBe(3);
+  });
+
+  it('один замер в окне — прочерк, а не ноль', () => {
+    // Ноль читался бы как «вес не изменился», а он просто не измерялся.
+    expect(bodyWeightStats([log('2026-09-17', 85)], TODAY).change7d).toBeNull();
   });
 });

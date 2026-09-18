@@ -27,12 +27,22 @@ export function LineTrend({
   height = 190,
   color = 'var(--color-accent)',
   emptyLabel = 'Нет данных',
+  singleLabel,
 }: {
   data: TrendPoint[];
   unit?: string;
   height?: number;
   color?: string;
   emptyLabel?: string;
+  /**
+   * Что сказать, когда точка в выбранном периоде ровно одна.
+   *
+   * По умолчанию «нужна ещё одна точка» — но это неправда, если замеры есть,
+   * просто они вне периода: у владельца было два взвешивания, а график за
+   * месяц требовал третье. Экран, который знает про переключатель периодов,
+   * обязан сказать про него.
+   */
+  singleLabel?: string;
 }) {
   // Deciding there is nothing to draw costs nothing, so it happens before the
   // library is fetched at all.
@@ -42,7 +52,9 @@ export function LineTrend({
         <EmptyState
           title="Пока нет данных"
           description={
-            data.length === 1 ? 'Нужна ещё одна точка, чтобы показать динамику.' : emptyLabel
+            data.length === 1
+              ? (singleLabel ?? 'Нужна ещё одна точка, чтобы показать динамику.')
+              : emptyLabel
           }
         />
       </div>

@@ -1193,6 +1193,40 @@ async function main() {
   const bwOverflow = await assertNoHorizontalOverflow(page);
   check('/more/body-weight fits with the new fields', bwOverflow === null, bwOverflow ?? '');
 
+  console.log('\nПОЛЕ ДАТЫ НЕ ВЫДАВЛИВАЕТ СОСЕДЕЙ');
+  /*
+   * Поле `type="date"` iOS рисует по локали: «18 сент. 2026 г.» заметно шире
+   * короткого «дд.мм.гггг», который показывает Chromium. Поэтому переполнение
+   * здесь НЕ воспроизводится, и проверять надо не ширину, а само правило:
+   * элемент flex с датой обязан иметь `min-width: 0`, иначе он не сожмётся
+   * ниже своего содержимого и вылезет за карточку — ровно это владелец и
+   * увидел на телефоне.
+   */
+  for (const url of ['/more/body-weight', '/more/pain', '/history/add']) {
+    await page.goto(`${base}${url}`, { waitUntil: 'networkidle' });
+    await page.waitForSelector('input[type="date"]');
+    const risky = await page.evaluate(() => {
+      const bad = [];
+      for (const el of document.querySelectorAll('input[type="date"]')) {
+        // Ищем ближайшего предка, который сам является элементом flex.
+        let node = el;
+        while (node && node.parentElement) {
+          const parent = node.parentElement;
+          if (getComputedStyle(parent).display.includes('flex')) {
+            const cs = getComputedStyle(node);
+            const shrinkable =
+              cs.minWidth === '0px' || cs.flexBasis === 'auto' || cs.flexGrow === '0';
+            if (!shrinkable) bad.push(`${node.tagName}.${node.className}`.slice(0, 60));
+            break;
+          }
+          node = parent;
+        }
+      }
+      return bad;
+    });
+    check(`${url} keeps its date field shrinkable`, risky.length === 0, risky.join(' | '));
+  }
+
   console.log('\nНАЗВАНИЯ УПРАЖНЕНИЙ ВИДНО ЦЕЛИКОМ');
   /*
    * В библиотеке шесть тяг верхнего блока и три разгибания на блоке, поэтому
