@@ -164,8 +164,18 @@ export default function BodyWeightPage() {
             />
           </Field>
         </div>
+        {/*
+          Дата — второстепенное поле: почти всегда это «сегодня», и трогают её
+          редко. Во всю ширину карточки она выглядела как главный ввод, хотя
+          главное здесь — три числа выше. Ширина задана обёрткой, а не классом
+          на самом поле: Tailwind разрешает конфликт `w-auto` против `w-full`
+          порядком в таблице стилей, а не порядком в `className`, поэтому
+          «передать класс поуже» молча не работает.
+        */}
         <Field label="Дата" className="mt-2">
-          <TextInput type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          <div className="max-w-[240px]">
+            <TextInput type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          </div>
         </Field>
         {/*
           Процент жира и висцеральный — с умных весов, поэтому НЕобязательные:
