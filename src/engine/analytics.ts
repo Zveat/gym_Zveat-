@@ -359,25 +359,38 @@ export function bodyWeightRate(
    * сентября 84 кг давали «взвешиваний меньше двух» и подпись «между
    * взвешиваниями меньше 5 дней» — при фактическом промежутке 46 дней. То
    * есть приложение отказывалось считать по данным, которые у него есть, и
-   * объясняло это неправдой. Свежий период точнее, поэтому пробуем его
-   * первым, но если пары в окне нет — берём два последних замера.
+   * объясняло это неправдой.
+   *
+   * ТУ ЗАПЛАТКУ Я СДЕЛАЛ НА ДВА КАНДИДАТА — И ЭТОГО НЕ ХВАТИЛО. Кандидатами
+   * были «самый старый в окне» и «предпоследний замер»; когда оба оказались
+   * одним и тем же свежим замером, всё остальное не рассматривалось вообще.
+   * На экране владельца это выглядело так: 1 августа 81 кг, 15 сентября
+   * 85,2, сегодня 86,1 — и вердикт «Пока нечего оценивать, между
+   * взвешиваниями 3 дня», при том что 48 дней и +5,1 кг лежат в той же
+   * базе. Та же неправда, просто с третьим замером.
+   *
+   * Поэтому теперь рассматриваются ВСЕ замеры, а не два. Годным считается
+   * любой, до которого от сегодняшнего от 5 до 90 дней; из годных берётся
+   * самый старый ВНУТРИ окна (самый длинный свежий период — он точнее), а
+   * если в окне годных нет — самый старый из оставшихся. Отказ считать
+   * остаётся только там, где считать действительно не из чего.
    */
-  const windowed = sorted.find((l) => l.date >= earliest);
-  const candidates = [windowed, sorted[sorted.length - 2]];
+  const eligible = sorted.filter((l) => {
+    if (l.date === to.date) return false;
+    const days = span(l);
+    return days >= MIN_RATE_SPAN_DAYS && days <= MAX_RATE_SPAN_DAYS;
+  });
 
-  for (const from of candidates) {
-    if (!from || from.date === to.date) continue;
-    const spanDays = span(from);
-    if (spanDays < MIN_RATE_SPAN_DAYS || spanDays > MAX_RATE_SPAN_DAYS) continue;
-    return {
-      perWeek: Math.round(((to.weight - from.weight) / spanDays) * 7 * 100) / 100,
-      spanDays,
-      from,
-      to,
-    };
-  }
+  const from = eligible.find((l) => l.date >= earliest) ?? eligible[0];
+  if (!from) return null;
 
-  return null;
+  const spanDays = span(from);
+  return {
+    perWeek: Math.round(((to.weight - from.weight) / spanDays) * 7 * 100) / 100,
+    spanDays,
+    from,
+    to,
+  };
 }
 
 /**
