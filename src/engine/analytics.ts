@@ -325,6 +325,13 @@ export interface BodyWeightRate {
 
 export const MIN_RATE_SPAN_DAYS = 5;
 
+/**
+ * Дальше этого промежутка «килограммы в неделю» уже не про текущую динамику:
+ * между замерами полгода — это средняя по совершенно разным периодам. Нижний
+ * порог отсекает воду, верхний — усреднение.
+ */
+export const MAX_RATE_SPAN_DAYS = 90;
+
 export function bodyWeightRate(
   logs: BodyWeightLog[],
   now: Date = new Date(),
@@ -335,23 +342,57 @@ export function bodyWeightRate(
   const sorted = logs.slice().sort((a, b) => a.date.localeCompare(b.date));
   const to = sorted[sorted.length - 1];
 
+  const span = (from: BodyWeightLog) =>
+    Math.round(
+      (Date.parse(`${to.date}T00:00:00Z`) - Date.parse(`${from.date}T00:00:00Z`)) / 86_400_000,
+    );
+
   const cutoff = new Date(now);
   cutoff.setDate(cutoff.getDate() - windowDays);
   const earliest = iso(cutoff);
-  const from = sorted.find((l) => l.date >= earliest);
-  if (!from || from.date === to.date) return null;
 
-  const spanDays = Math.round(
+  /*
+   * Окно в 30 дней — ПРЕДПОЧТЕНИЕ, а не условие.
+   *
+   * Раньше замер старше окна просто выбрасывался, и у человека, который
+   * взвешивается редко, скорость не считалась вообще: 1 августа 81 кг и 16
+   * сентября 84 кг давали «взвешиваний меньше двух» и подпись «между
+   * взвешиваниями меньше 5 дней» — при фактическом промежутке 46 дней. То
+   * есть приложение отказывалось считать по данным, которые у него есть, и
+   * объясняло это неправдой. Свежий период точнее, поэтому пробуем его
+   * первым, но если пары в окне нет — берём два последних замера.
+   */
+  const windowed = sorted.find((l) => l.date >= earliest);
+  const candidates = [windowed, sorted[sorted.length - 2]];
+
+  for (const from of candidates) {
+    if (!from || from.date === to.date) continue;
+    const spanDays = span(from);
+    if (spanDays < MIN_RATE_SPAN_DAYS || spanDays > MAX_RATE_SPAN_DAYS) continue;
+    return {
+      perWeek: Math.round(((to.weight - from.weight) / spanDays) * 7 * 100) / 100,
+      spanDays,
+      from,
+      to,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Фактический промежуток между двумя последними замерами, дней. Нужен
+ * подписи «нечего оценивать», чтобы она называла настоящее число, а не
+ * порог.
+ */
+export function lastWeighInGap(logs: BodyWeightLog[]): number | null {
+  if (logs.length < 2) return null;
+  const sorted = logs.slice().sort((a, b) => a.date.localeCompare(b.date));
+  const to = sorted[sorted.length - 1];
+  const from = sorted[sorted.length - 2];
+  return Math.round(
     (Date.parse(`${to.date}T00:00:00Z`) - Date.parse(`${from.date}T00:00:00Z`)) / 86_400_000,
   );
-  if (spanDays < MIN_RATE_SPAN_DAYS) return null;
-
-  return {
-    perWeek: Math.round(((to.weight - from.weight) / spanDays) * 7 * 100) / 100,
-    spanDays,
-    from,
-    to,
-  };
 }
 
 /**
@@ -417,7 +458,17 @@ export function bodyWeightVerdict(
       detail:
         logs.length < 2
           ? 'Нужно второе взвешивание — хотя бы через пять дней после первого. Тогда цель начнёт показывать, идёте вы по плану или нет.'
-          : `Между взвешиваниями меньше ${MIN_RATE_SPAN_DAYS} дней. На таком промежутке видна вода, а не динамика — взвесьтесь ещё раз через несколько дней.`,
+          : (() => {
+              /*
+               * Подпись называет НАСТОЯЩИЙ промежуток и настоящую причину.
+               * Раньше здесь всегда стояло «меньше 5 дней», и при 46 днях
+               * между взвешиваниями это была прямая неправда.
+               */
+              const gap = lastWeighInGap(logs) ?? 0;
+              return gap > MAX_RATE_SPAN_DAYS
+                ? `Между взвешиваниями ${count(gap, WORDS.day)} — это средняя по слишком разным периодам. Взвесьтесь ещё раз, и цель начнёт считать.`
+                : `Между взвешиваниями ${count(gap, WORDS.day)}. На таком промежутке видна вода, а не динамика — нужно хотя бы ${MIN_RATE_SPAN_DAYS} дней.`;
+            })(),
     };
   }
 

@@ -1163,6 +1163,33 @@ async function main() {
     body.slice(0, 200),
   );
 
+  /*
+   * Список записей обязан показывать ВСЁ введённое. Владелец ввёл процент
+   * жира и не нашёл его в истории — он был виден только в верхней карточке
+   * последнего замера. Записал значит видит.
+   */
+  const recorded = await page.evaluate(() => {
+    const heading = [...document.querySelectorAll('*')].find(
+      (el) => el.children.length === 0 && el.textContent.trim() === 'Записи',
+    );
+    return heading?.closest('section')?.innerText ?? '';
+  });
+  check(
+    'the records list shows body fat, not just weight',
+    /жир 26\.0%/.test(recorded) && /сухая 63/.test(recorded) && /висц\. 10/.test(recorded),
+    recorded.slice(0, 200),
+  );
+
+  // Тап по записи подставляет её в поля — иначе дополнить прошлый замер
+  // процентом жира можно только вспомнив дату и вес.
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  // Берём замер за 15.01 — он единственный без процента жира, и подмена
+  // формы на нём видна однозначно.
+  await page.locator('section:has-text("Записи") button:has-text("78")').first().click();
+  await page.waitForTimeout(400);
+  const refilled = await page.locator('input[placeholder="80.2"]').inputValue();
+  check('tapping a record loads it back into the form', refilled === '78', refilled);
+
   const bwOverflow = await assertNoHorizontalOverflow(page);
   check('/more/body-weight fits with the new fields', bwOverflow === null, bwOverflow ?? '');
 

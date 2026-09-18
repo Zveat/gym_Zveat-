@@ -313,9 +313,41 @@ export default function BodyWeightPage() {
                     <span className="tnum w-[70px] shrink-0 text-[12px] text-dim">
                       {formatDateShort(log.date)}
                     </span>
-                    <span className="tnum flex-1 text-[15px] font-medium">
-                      {formatWeight(log.weight)} кг
-                    </span>
+                    {/*
+                      В списке показывается ВСЁ, что введено, а не только вес.
+                      Владелец ввёл процент жира и не нашёл его нигде, кроме
+                      верхней карточки последнего замера: «не вижу историю
+                      введённых данных». Записал — значит должен видеть.
+                    */}
+                    {/*
+                      Тап по записи подставляет её в поля. Дополнить прошлый
+                      замер процентом жира иначе можно только набрав ту же
+                      дату руками и вспомнив вес — а запись за существующую
+                      дату и так перезаписывается, так что механика уже есть,
+                      не хватало только способа ею воспользоваться.
+                    */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWeight(String(log.weight));
+                        setDate(log.date);
+                        setFat(log.bodyFatPercent != null ? String(log.bodyFatPercent) : '');
+                        setVisceral(log.visceralFat != null ? String(log.visceralFat) : '');
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      className="min-w-0 flex-1 text-left active:opacity-60"
+                    >
+                      <span className="tnum block text-[15px] font-medium">
+                        {formatWeight(log.weight)} кг
+                      </span>
+                      {log.bodyFatPercent != null ? (
+                        <span className="tnum block text-[11.5px] text-dim">
+                          жир {log.bodyFatPercent.toFixed(1)}% · {formatWeight(fatMass(log)!)} кг ·
+                          сухая {formatWeight(leanMass(log)!)} кг
+                          {log.visceralFat != null ? ` · висц. ${log.visceralFat}` : ''}
+                        </span>
+                      ) : null}
+                    </button>
                     {diff !== null && diff !== 0 ? (
                       <span
                         className={cx(
