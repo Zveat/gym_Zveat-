@@ -1,3 +1,4 @@
+import { compositionChange, describeComposition } from './body-composition';
 import type {
   BodyWeightGoal,
   Difficulty,
@@ -384,6 +385,15 @@ export interface BodyWeightVerdict {
   kind: BodyWeightVerdictKind;
   headline: string;
   detail: string;
+  /**
+   * Чем набран или сброшен вес — отдельной строкой, когда процент жира есть
+   * на обоих взвешиваниях.
+   *
+   * Отдельным полем, а не внутри `detail`: вердикт по скорости верен и без
+   * состава, и подмешивать одно в другое значило бы, что при отсутствии
+   * процента жира текст пришлось бы собирать иначе.
+   */
+  composition?: string;
 }
 
 export function bodyWeightVerdict(
@@ -392,6 +402,13 @@ export function bodyWeightVerdict(
   now: Date = new Date(),
 ): BodyWeightVerdict {
   const rate = bodyWeightRate(logs, now);
+
+  /*
+   * Состав считается по ТЕМ ЖЕ двум взвешиваниям, что и скорость, — иначе
+   * строки под одним вердиктом говорили бы о разных промежутках.
+   */
+  const split = rate ? compositionChange(rate.from, rate.to) : null;
+  const composition = split ? { composition: describeComposition(split) } : {};
 
   if (!rate) {
     return {
@@ -412,12 +429,18 @@ export function bodyWeightVerdict(
 
   if (goal === 'maintain') {
     if (perWeek >= band.min && perWeek <= band.max) {
-      return { kind: 'ok', headline: 'Вес держится', detail: `${signed} ${span} — это и есть поддержание.` };
+      return {
+        kind: 'ok',
+        headline: 'Вес держится',
+        detail: `${signed} ${span} — это и есть поддержание.`,
+        ...composition,
+      };
     }
     return {
       kind: perWeek > 0 ? 'fast' : 'wrong-way',
       headline: perWeek > 0 ? 'Вес ползёт вверх' : 'Вес ползёт вниз',
       detail: `${signed} ${span}. Для поддержания это много: цель — остаться в пределах ±${band.max} кг в неделю.`,
+      ...composition,
     };
   }
 
@@ -428,6 +451,7 @@ export function bodyWeightVerdict(
       kind: 'wrong-way',
       headline: wantsUp ? 'Вес падает, а цель — набор' : 'Вес растёт, а цель — сушка',
       detail: `${signed} ${span}. Либо еды не хватает под ${wantsUp ? 'набор' : 'дефицит'}, либо цель пора сменить.`,
+      ...composition,
     };
   }
 
@@ -436,6 +460,7 @@ export function bodyWeightVerdict(
       kind: 'ok',
       headline: 'Идёте по плану',
       detail: `${signed} ${span} — в разумном коридоре ${band.min}…${band.max} кг в неделю.`,
+      ...composition,
     };
   }
 
@@ -447,6 +472,7 @@ export function bodyWeightVerdict(
       detail: wantsUp
         ? `${signed} ${span}. Быстрее ${band.max} кг в неделю прибавляется в основном не мышцами.`
         : `${signed} ${span}. Быстрее ${Math.abs(band.min)} кг в неделю сушка забирает силу — на тренировках это видно сразу.`,
+      ...composition,
     };
   }
 
@@ -454,6 +480,7 @@ export function bodyWeightVerdict(
     kind: 'slow',
     headline: wantsUp ? 'Для набора мало' : 'Для сушки мало',
     detail: `${signed} ${span}. Ожидаемо ${wantsUp ? `${band.min}…${band.max}` : `${band.min}…${band.max}`} кг в неделю — вес почти стоит.`,
+    ...composition,
   };
 }
 

@@ -19,6 +19,7 @@ import { todayString } from '@/domain/ids';
 import type { BodyWeightGoal } from '@/domain/types';
 import { bodyWeightStats, bodyWeightVerdict } from '@/engine/analytics';
 import { formatDateShort, formatWeight } from '@/engine/format';
+import { fatMass, leanMass } from '@/engine/body-composition';
 import { useStore } from '@/store/useStore';
 
 type Range = 'week' | 'month' | '3m' | 'year' | 'all';
@@ -46,6 +47,8 @@ export default function BodyWeightPage() {
   const updateSettings = useStore((s) => s.updateSettings);
 
   const [weight, setWeight] = useState('');
+  const [fat, setFat] = useState('');
+  const [visceral, setVisceral] = useState('');
   const [date, setDate] = useState(todayString());
   const [range, setRange] = useState<Range>('month');
 
@@ -53,6 +56,8 @@ export default function BodyWeightPage() {
   // Считается всегда, даже без данных: именно он объясняет, чего не хватает,
   // чтобы цель начала работать. Раньше переключатель молчал при любом состоянии.
   const verdict = useMemo(() => bodyWeightVerdict(logs, goal), [logs, goal]);
+  const latestFat = stats.latest ? fatMass(stats.latest) : null;
+  const latestLean = stats.latest ? leanMass(stats.latest) : null;
 
   const sorted = useMemo(
     () => logs.slice().sort((a, b) => b.date.localeCompare(a.date)),
@@ -83,8 +88,23 @@ export default function BodyWeightPage() {
   const submit = () => {
     const value = parseFloat(weight.replace(',', '.'));
     if (!Number.isFinite(value) || value <= 0) return;
-    addBodyWeight(Math.round(value * 10) / 10, date);
+
+    /*
+     * Пустое поле — это «не мерил», а не ноль. Ноль процентов жира не бывает,
+     * и записанный ноль испортил бы и массу жира, и разложение изменения.
+     */
+    const num = (raw: string, max: number) => {
+      const n = parseFloat(raw.replace(',', '.'));
+      return Number.isFinite(n) && n > 0 && n <= max ? Math.round(n * 10) / 10 : null;
+    };
+
+    addBodyWeight(Math.round(value * 10) / 10, date, undefined, {
+      bodyFatPercent: num(fat, 100),
+      visceralFat: num(visceral, 60),
+    });
     setWeight('');
+    setFat('');
+    setVisceral('');
   };
 
   const changeTone = (value: number | null) => {
@@ -115,6 +135,43 @@ export default function BodyWeightPage() {
             <TextInput type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </Field>
         </div>
+        {/*
+          Процент жира и висцеральный — с умных весов, поэтому НЕобязательные:
+          взвесился в зале на обычных — вводишь только вес, и вердикт по
+          скорости работает как раньше. Всё остальное, что показывают весы
+          (масса жира, сухая и мышечная масса, ИМТ), выводится из этих двух
+          чисел — вводить это руками значит делать лишнюю работу на каждом
+          взвешивании.
+        */}
+        <div className="mt-2 flex items-end gap-2">
+          <Field label="Жир, %" className="flex-1">
+            <TextInput
+              type="number"
+              inputMode="decimal"
+              step="0.1"
+              value={fat}
+              onChange={(e) => setFat(e.target.value)}
+              placeholder="26.0"
+              className="tnum"
+            />
+          </Field>
+          <Field label="Висцеральный" className="flex-1">
+            <TextInput
+              type="number"
+              inputMode="decimal"
+              step="1"
+              value={visceral}
+              onChange={(e) => setVisceral(e.target.value)}
+              placeholder="10"
+              className="tnum"
+            />
+          </Field>
+        </div>
+        <p className="mt-1.5 px-0.5 text-[11.5px] leading-relaxed text-dim">
+          Жир и висцеральный — с умных весов, можно не заполнять. Массу жира и сухую массу
+          приложение посчитает само.
+        </p>
+
         {/*
           Подпись меняется, а не только гаснет. Поле пустое, но в нём стоит
           пример «80.2» — серый текст того же размера читается как уже
@@ -160,8 +217,37 @@ export default function BodyWeightPage() {
           title={verdict.headline}
         >
           {verdict.detail}
+          {/*
+            Чем именно набран вес — отдельной строкой, и это главное, что
+            даёт процент жира. «+2,1 кг» не говорит, правильно ли идёт
+            набор; «+2,1 кг, из них жир +1,6» говорит всё.
+          */}
+          {verdict.composition ? (
+            <span className="mt-1.5 block font-medium text-ink">{verdict.composition}</span>
+          ) : null}
         </Notice>
       </section>
+
+      {stats.latest && latestFat !== null ? (
+        <Card className="mt-4 grid grid-cols-3 divide-x divide-line">
+          <div className="px-3 py-4">
+            <Stat label="Жир" value={stats.latest.bodyFatPercent!.toFixed(1)} unit="%" />
+          </div>
+          <div className="px-3 py-4">
+            <Stat label="Масса жира" value={formatWeight(latestFat)} unit="кг" />
+          </div>
+          <div className="px-3 py-4">
+            <Stat label="Сухая масса" value={formatWeight(latestLean!)} unit="кг" />
+          </div>
+        </Card>
+      ) : null}
+
+      {stats.latest?.visceralFat != null ? (
+        <p className="mt-2 px-1 text-[11.5px] leading-relaxed text-dim">
+          Висцеральный жир — {stats.latest.visceralFat}. Он не выводится из веса и процента
+          жира, поэтому и записывается отдельно.
+        </p>
+      ) : null}
 
       {stats.latest ? (
         <>

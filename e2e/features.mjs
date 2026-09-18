@@ -1102,6 +1102,70 @@ async function main() {
   body = await text();
   check('the goal counts the imported history', has(body, '/ 100'), '');
 
+  console.log('\nСОСТАВ ТЕЛА: ЧЕМ НАБРАН ВЕС');
+  /*
+   * Числа из настоящего отчёта весов владельца: 85,2 кг при 26,0% жира
+   * против 83,1 при 24,8% раньше. Проверяется то, ради чего процент жира и
+   * вводится: «+2,1 кг» превращается в «из них жир +1,6».
+   *
+   * ДАТЫ БЕРУТСЯ ТЕ ЖЕ, что у раздела про вес тела выше, а не свои. Скорость
+   * считается по САМОМУ РАННЕМУ и самому свежему замеру в окне 30 дней, и
+   * свои даты я вписал между чужими — в расклад попадали записи без процента
+   * жира, состав получался неизвестен, и падали четыре проверки. Запись за
+   * ту же дату обновляется, поэтому дополняем существующие замеры.
+   */
+  await page.setViewportSize(VIEWPORTS.pro);
+  await page.goto(`${base}/more/body-weight`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('input[placeholder="80.2"]');
+
+  const today = await page.evaluate(() => {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  });
+
+  const weigh = async (date, kg, fat, visceral) => {
+    await page.fill('input[type="date"]', date);
+    await page.fill('input[placeholder="80.2"]', String(kg));
+    if (fat !== undefined) await page.fill('input[placeholder="26.0"]', String(fat));
+    if (visceral !== undefined) await page.fill('input[placeholder="10"]', String(visceral));
+    await page.click('button:has-text("ДОБАВИТЬ")');
+    await page.waitForTimeout(400);
+  };
+
+  await weigh('2026-09-02', 83.1, 24.8);
+  await weigh(today, 85.2, 26.0, 10);
+  body = await text();
+
+  check(
+    'fat mass matches what the scale itself shows: 85.2 × 26% = 22.2',
+    has(body, '22.2'),
+    body.slice(0, 240),
+  );
+  check('and lean mass: 85.2 − 22.2 = 63', has(body, '63'), '');
+  check(
+    'the verdict says what the weight was gained as',
+    has(body, 'жир +1.6 кг') && has(body, 'сухая +0.5 кг'),
+    body.slice(0, 320),
+  );
+  check('visceral fat is stored and shown', has(body, 'Висцеральный жир — 10'), '');
+
+  /*
+   * Замер без процента жира обязан работать как раньше. Дата — далеко в
+   * прошлом, за окном тридцати дней: иначе он стал бы самым ранним замером
+   * окна и снёс бы расклад состава, который только что проверили.
+   */
+  await weigh('2026-01-15', 78.0);
+  body = await text();
+  check(
+    'a plain weigh-in with no body-fat still works and keeps the split',
+    has(body, 'жир +1.6 кг') && has(body, '78'),
+    body.slice(0, 200),
+  );
+
+  const bwOverflow = await assertNoHorizontalOverflow(page);
+  check('/more/body-weight fits with the new fields', bwOverflow === null, bwOverflow ?? '');
+
   console.log('\nНАЗВАНИЯ УПРАЖНЕНИЙ ВИДНО ЦЕЛИКОМ');
   /*
    * В библиотеке шесть тяг верхнего блока и три разгибания на блоке, поэтому

@@ -195,7 +195,16 @@ interface StoreActions {
   addPainLog: (input: Omit<PainLog, 'id' | 'createdAt'>) => void;
   resolvePainLog: (id: ID) => void;
   deletePainLog: (id: ID) => void;
-  addBodyWeight: (weight: number, date?: string, notes?: string) => void;
+  /**
+   * Состав тела отдельным аргументом: вес вводится всегда, процент жира и
+   * висцеральный — только когда взвешивался на умных весах.
+   */
+  addBodyWeight: (
+    weight: number,
+    date?: string,
+    notes?: string,
+    body?: { bodyFatPercent?: number | null; visceralFat?: number | null },
+  ) => void;
   deleteBodyWeight: (id: ID) => void;
 
   /* Data management */
@@ -921,7 +930,7 @@ export const useStore = create<Store>((set, get) => ({
     persistRemoval('painLogs', id);
   },
 
-  addBodyWeight(weight, date = todayString(), notes) {
+  addBodyWeight(weight, date = todayString(), notes, body = {}) {
     const existing = get().bodyWeightLogs.find((l) => l.date === date);
     // `{ notes }` with no note yields `{ notes: undefined }`, which Firestore
     // refuses to write. The adapter strips it now, but not creating the key is
@@ -931,6 +940,9 @@ export const useStore = create<Store>((set, get) => ({
       weight,
       date,
       ...(notes ? { notes } : {}),
+      // Те же правила: пустое поле — это отсутствие ключа, а не `undefined`.
+      ...(body.bodyFatPercent != null ? { bodyFatPercent: body.bodyFatPercent } : {}),
+      ...(body.visceralFat != null ? { visceralFat: body.visceralFat } : {}),
     };
     set({
       bodyWeightLogs: existing
