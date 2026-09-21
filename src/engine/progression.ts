@@ -9,6 +9,7 @@ import type {
   SessionExercise,
   WorkoutSession,
 } from '@/domain/types';
+import { FAILURE_SET_TYPES, isEasierThanPlan } from '@/domain/modes';
 import { roundToStep } from './format';
 import { applySetCount } from './session';
 import { exerciseHistory } from './history';
@@ -43,6 +44,22 @@ export interface ProgressionRecommendation {
 
 function workingSets(entry: SessionExercise) {
   return entry.sets.filter((set) => isWorkingSet(set) && set.setType !== 'failure' && set.setType !== 'burnout' && set.setType !== 'drop_set');
+}
+
+/**
+ * РАБОЧИЙ ВЕС ИЗ ПРОГРАММЫ, а не из плана на сегодня.
+ *
+ * Это тот же минимум по рабочим подходам, от которого считает
+ * `applyRecommendation`, — и в этом весь смысл: рекомендация обязана быть
+ * выражена в тех же единицах, в которых её потом применят. Иначе «ПРИНЯТЬ»
+ * под зелёной надписью «можно прибавить» меняет программу не туда.
+ */
+function programWorkingWeight(programExercise: ProgramExercise): number | null {
+  const weights = programExercise.sets
+    .filter((set) => set.setType === 'normal')
+    .map((set) => set.targetWeight)
+    .filter((w): w is number => w !== null);
+  return weights.length ? Math.min(...weights) : null;
 }
 
 /** The weight the plan prescribed for the bulk of the working sets. */
@@ -88,8 +105,18 @@ export function recommendForExercise(options: RecommendOptions): ProgressionReco
   const allWorking = workingSets(entry);
   const sets = allWorking.filter((s) => s.actual);
 
+  /*
+   * Считаем ТЕ ЖЕ подходы, что считает `workingSets` у сделанного: без
+   * разминочных и без отказных/дропов. Раньше отказной подход попадал в план,
+   * но выбрасывался из сделанного, и приложение обвиняло владельца в
+   * невыполненном подходе, которого само же не просило: «Сделано 4 из 5
+   * подходов — 1 не выполнено» на тяге с канатом, где пятый подход отказной.
+   * В «Легкой» это ещё и накладывалось на `disableFailureSets`.
+   */
   const fromProgram = programExercise
-    ? programExercise.sets.filter((set) => set.setType !== 'warmup').length
+    ? programExercise.sets.filter(
+        (set) => set.setType !== 'warmup' && !FAILURE_SET_TYPES.has(set.setType),
+      ).length
     : 0;
   // Упражнение, добавленное на ходу, плана не имеет — тогда сделанное и есть
   // план, и правило работает как раньше.
@@ -99,7 +126,19 @@ export function recommendForExercise(options: RecommendOptions): ProgressionReco
       : fromProgram
     : allWorking.length;
   const performed = sets.map((s) => ({ weight: s.actual!.weight, reps: s.actual!.reps }));
-  const currentWeight = plannedWorkingWeight(entry);
+  /*
+   * ВЕС БЕРЁТСЯ ИЗ ПРОГРАММЫ, А НЕ ИЗ ПЛАНА НА СЕГОДНЯ.
+   *
+   * План на сегодня уже умножен на режим: в «Легкой» жим 50 кг превращается в
+   * 42,5. Рекомендация же применяется к ПРОГРАММЕ, поэтому «42,5 + 2,5 = 45»
+   * записывалось в программу как 45 — то есть удачный лёгкий день СНИЖАЛ план
+   * на 5 кг под зелёной надписью «можно прибавить». В «Тяжелой» тот же расчёт
+   * работал наоборот и завышал программу на 5% просто так. Для упражнения,
+   * добавленного на ходу, программы нет — тогда план дня и есть вся правда.
+   */
+  const currentWeight = programExercise
+    ? (programWorkingWeight(programExercise) ?? plannedWorkingWeight(entry))
+    : plannedWorkingWeight(entry);
 
   const base: ProgressionRecommendation = {
     exerciseEntryId: entry.id,
@@ -133,30 +172,65 @@ export function recommendForExercise(options: RecommendOptions): ProgressionReco
     return { ...base, verdict: 'hold', reason: 'Техника ломалась — закрепляем текущий вес.' };
   }
 
-  switch (config.type) {
-    case 'double':
-      return doubleProgression(base, {
-        config,
-        increment,
-        sets,
-        roundStep,
-        currentWeight,
-        planned: plannedCount,
-      });
-    case 'fixed':
-      return {
-        ...base,
-        verdict: 'increase',
-        reason: `Линейная прогрессия: +${increment} кг каждую тренировку.`,
-        suggestedWeight:
-          currentWeight === null ? null : roundToStep(currentWeight + increment, roundStep),
-      };
-    case 'custom':
-      return customProgression(base, { config, increment, sets, roundStep, currentWeight, sessions, entry });
-    case 'manual':
-    default:
-      return manualHint(base, { increment, sets, roundStep, currentWeight });
+  const verdict = ((): ProgressionRecommendation => {
+    switch (config.type) {
+      case 'double':
+        return doubleProgression(base, {
+          config,
+          increment,
+          sets,
+          roundStep,
+          currentWeight,
+          planned: plannedCount,
+          repsDelta: modeSnapshot?.repsDelta ?? 0,
+        });
+      case 'fixed':
+        return {
+          ...base,
+          verdict: 'increase',
+          reason: `Линейная прогрессия: +${increment} кг каждую тренировку.`,
+          suggestedWeight:
+            currentWeight === null ? null : roundToStep(currentWeight + increment, roundStep),
+        };
+      case 'custom':
+        return customProgression(base, {
+          config,
+          increment,
+          sets,
+          roundStep,
+          currentWeight,
+          sessions,
+          entry,
+        });
+      case 'manual':
+      default:
+        return manualHint(base, { increment, sets, roundStep, currentWeight });
+    }
+  })();
+
+  /*
+   * ЛЁГКИЙ ДЕНЬ НЕ СУДИТ ПЛАН.
+   *
+   * «Зачем то предлагает корректировать тренировку хотя я выбрал режим
+   * легкая» — и он прав. В «Легкой» вес снижен до 85%, один подход убран,
+   * отказные выключены; закрыть 12 повторений на таком дне ОЖИДАЕМО, это и
+   * есть смысл режима. Победой это не является, и поднимать по нему план
+   * нельзя. Держать тоже незачем: план никто не трогал, «держим вес» здесь —
+   * пустая карточка, требующая решения на ровном месте.
+   *
+   * Остаётся только снижение: боль и настоящая просадка на 85% — сигнал,
+   * который не зависит от режима, и его глушить нельзя.
+   */
+  if (modeSnapshot && isEasierThanPlan(modeSnapshot) && verdict.verdict !== 'decrease') {
+    return {
+      ...verdict,
+      verdict: 'none',
+      suggestedWeight: null,
+      reason: `Режим «${modeSnapshot.label}» — день был легче плана. По нему план не меняем.`,
+    };
   }
+
+  return verdict;
 }
 
 interface RuleContext {
@@ -167,6 +241,8 @@ interface RuleContext {
   currentWeight: number | null;
   /** Сколько рабочих подходов было ЗАПЛАНИРОВАНО, а не сделано. */
   planned?: number;
+  /** Сдвиг диапазона повторений у режима: в «Тяжелой» план просит на 2 меньше. */
+  repsDelta?: number;
   sessions?: WorkoutSession[];
   entry?: SessionExercise;
 }
@@ -175,8 +251,28 @@ function doubleProgression(
   base: ProgressionRecommendation,
   ctx: RuleContext,
 ): ProgressionRecommendation {
-  const { config, increment, sets, roundStep, currentWeight, planned = sets.length } = ctx;
-  const target = config?.repTarget ?? Math.max(...sets.map((s) => s.plan.repsMax ?? 12));
+  const {
+    config,
+    increment,
+    sets,
+    roundStep,
+    currentWeight,
+    planned = sets.length,
+    repsDelta = 0,
+  } = ctx;
+  /*
+   * Цель по повторениям — та, что стояла в плане НА СЕГОДНЯ.
+   *
+   * `repTarget` живёт в программе и режимом не двигался, а план подходов —
+   * двигался: в «Тяжелой» он просит 10 вместо 12. Выходило, что человек делал
+   * ровно то, что написано, и читал «Ещё 4 подхода не дотянули до 12».
+   * Считать по `plan.repsMax` нельзя без оговорки: там сдвиг уже применён,
+   * поэтому сдвигаем только явный `repTarget`.
+   */
+  const target =
+    config?.repTarget != null
+      ? Math.max(1, config.repTarget + repsDelta)
+      : Math.max(...sets.map((s) => s.plan.repsMax ?? 12));
   const reps = sets.map((s) => s.actual!.reps);
   const allHit = reps.every((r) => r >= target);
   const minReps = Math.min(...reps);

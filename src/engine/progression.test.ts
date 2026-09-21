@@ -186,3 +186,133 @@ describe('accepting a recommendation', () => {
     expect(applyRecommendation(program, bench.id, 50, 'x')).toBe(program);
   });
 });
+
+/**
+ * РЕЖИМ ТРЕНИРОВКИ — ЭТО НЕ ПРОГРАММА.
+ *
+ * Владелец: «Зачем то предлагает корректировать тренировку хотя я выбрал
+ * режим легкая». На дне первой программы в «Легкой» приложение показывало
+ * зелёное «можно прибавить» на всех упражнениях — и это был не просто шум:
+ * «ПРИНЯТЬ» записывало в программу вес, посчитанный от 85% плана, то есть
+ * удачный лёгкий день СНИЖАЛ жим с 50 до 45 кг.
+ */
+function dayOneSession(
+  mode: 'normal' | 'light' | 'heavy',
+  opts: { reps?: number; date?: string } = {},
+): WorkoutSession {
+  const date = opts.date ?? '2026-09-21';
+  let session = buildSession({
+    program,
+    day: program.days[0],
+    mode,
+    modeConfig: DEFAULT_MODES[mode],
+    exercises,
+    date,
+    startedAt: `${date}T13:00:00.000Z`,
+  });
+  session.exercises.forEach((entry) => {
+    entry.sets.forEach((set) => {
+      if (set.setType === 'warmup') return;
+      session = completeSet(session, entry.id, set.id, {
+        weight: set.plan.weight ?? 0,
+        reps: opts.reps ?? set.plan.repsMax ?? 12,
+        difficulty: 'good',
+      });
+    });
+  });
+  return finishSession(session, `${date}T14:00:00.000Z`);
+}
+
+const benchExercise = program.days[0].exercises[0];
+const pecDeck = program.days[0].exercises[2];
+/** Тяга с канатом: четыре рабочих подхода плюс пятый отказной. */
+const ropePushdown = program.days[0].exercises[4];
+
+describe('лёгкий день не судит план', () => {
+  it('в «Легкой» не предлагает ничего менять, хотя все повторения закрыты', () => {
+    const session = dayOneSession('light');
+    expect(reviewSession(session, [program], exercises, [session])).toEqual([]);
+  });
+
+  it('и объясняет причину, а не молчит', () => {
+    const session = dayOneSession('light');
+    const rec = recommendForExercise({
+      entry: session.exercises[0],
+      programExercise: benchExercise,
+      exercise: exercises.find((e) => e.id === benchExercise.exerciseId),
+      sessions: [],
+      modeSnapshot: session.modeSnapshot,
+    });
+    expect(rec.verdict).toBe('none');
+    expect(rec.reason).toContain('Легкая');
+    expect(rec.reason).toContain('легче плана');
+    // Веса не предлагаем вовсе — принимать нечего.
+    expect(rec.suggestedWeight).toBeNull();
+  });
+
+  it('но боль на лёгком дне всё равно снижает вес', () => {
+    let session = dayOneSession('light');
+    session = { ...session, exercises: session.exercises.map((e, i) => (i === 0 ? { ...e, observations: ['pain'] } : e)) };
+    const rec = recommendForExercise({
+      entry: session.exercises[0],
+      programExercise: benchExercise,
+      exercise: exercises.find((e) => e.id === benchExercise.exerciseId),
+      sessions: [],
+      modeSnapshot: session.modeSnapshot,
+    });
+    expect(rec.verdict).toBe('decrease');
+    // От программных 50, а не от 42,5 плана дня.
+    expect(rec.suggestedWeight).toBe(47.5);
+  });
+});
+
+describe('рекомендация считается от программы, а не от плана на сегодня', () => {
+  it('в «Тяжелой» не завышает план на процент режима', () => {
+    const session = dayOneSession('heavy');
+    const entry = session.exercises[2];
+    const rec = recommendForExercise({
+      entry,
+      programExercise: pecDeck,
+      exercise: exercises.find((e) => e.id === pecDeck.exerciseId),
+      sessions: [],
+      modeSnapshot: session.modeSnapshot,
+    });
+    // План дня был 41 кг (39 × 1.05), программа — 39. Прибавляем к программе.
+    expect(entry.sets[0].plan.weight).toBe(41);
+    expect(rec.currentWeight).toBe(39);
+    expect(rec.suggestedWeight).toBe(42);
+  });
+
+  it('в «Тяжелой» судит по той цели, которую сам и поставил на день', () => {
+    const session = dayOneSession('heavy');
+    const rec = recommendForExercise({
+      entry: session.exercises[0],
+      programExercise: benchExercise,
+      exercise: exercises.find((e) => e.id === benchExercise.exerciseId),
+      sessions: [],
+      modeSnapshot: session.modeSnapshot,
+    });
+    // Режим просит 10 повторений вместо 12 — и 10 закрывают цель.
+    expect(rec.repTarget).toBe(10);
+    expect(rec.verdict).toBe('increase');
+    expect(rec.reason).toContain('10 повторений');
+  });
+});
+
+describe('отказной подход не считается невыполненным', () => {
+  it('четыре рабочих подхода из четырёх — это полный объём', () => {
+    const session = dayOneSession('normal');
+    const entry = session.exercises[4];
+    const rec = recommendForExercise({
+      entry,
+      programExercise: ropePushdown,
+      exercise: exercises.find((e) => e.id === ropePushdown.exerciseId),
+      sessions: [],
+      modeSnapshot: session.modeSnapshot,
+    });
+    // В программе пять подходов, но пятый отказной — его и в сделанных не
+    // считают. Раньше выходило «Сделано 4 из 5 подходов — 1 не выполнено».
+    expect(rec.reason).not.toContain('не выполнено');
+    expect(rec.verdict).toBe('increase');
+  });
+});

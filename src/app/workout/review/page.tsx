@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useMemo, useState } from 'react';
+import { isEasierThanPlan } from '@/domain/modes';
 import { Screen, ScreenHeader } from '@/components/layout/Screen';
 import { CardioCard } from '@/components/workout/CardioCard';
 import { Sheet } from '@/components/ui/Sheet';
@@ -86,6 +87,11 @@ function Review() {
     () => (session ? reviewSession(session, programs, exercises, sessions) : []),
     [session, programs, exercises, sessions],
   );
+  /*
+   * Режим, в котором день был легче плана (85% веса, на подход меньше).
+   * По такому дню прогрессия молчит, и экран обязан сказать, почему.
+   */
+  const easierDay = session ? isEasierThanPlan(session.modeSnapshot) : false;
   const prs = useMemo(
     () => (session ? sessionPRSummary(sessions, session) : { count: 0, comparable: 0 }),
     [sessions, session],
@@ -223,6 +229,27 @@ function Review() {
       <section className="mt-7">
         <SectionTitle>Что дальше с весами</SectionTitle>
 
+        {/*
+          «Зачем то предлагает корректировать тренировку хотя я выбрал режим
+          легкая». Объяснение стоит ОДНОЙ карточкой на весь экран, а не строкой
+          в каждом упражнении: причина у всех одна — день был легче плана.
+        */}
+        {easierDay ? (
+          <Card className="mt-2 p-5">
+            <p className="text-[14px] leading-relaxed">
+              Режим «{session.modeSnapshot.label}» — день был легче плана
+              {session.modeSnapshot.weightMultiplier < 1
+                ? `: вес ${Math.round(session.modeSnapshot.weightMultiplier * 100)}% от программы`
+                : ''}
+              . Закрыть повторения на таком дне ожидаемо, поэтому план по нему не меняем.
+            </p>
+            <p className="mt-2 text-[12.5px] leading-relaxed text-dim">
+              Вернётесь в «Обычную» — рекомендации вернутся. Снижение веса и боль
+              показываются в любом режиме.
+            </p>
+          </Card>
+        ) : null}
+
         {recommendations.length ? (
           <ul className="mt-2 flex flex-col gap-2.5">
             {recommendations.map((rec) => {
@@ -309,7 +336,7 @@ function Review() {
               );
             })}
           </ul>
-        ) : (
+        ) : easierDay ? null : (
           <Card className="mt-2 p-5">
             <p className="text-[14px] leading-relaxed text-dim">
               Менять в программе нечего — план остаётся как есть.

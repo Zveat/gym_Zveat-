@@ -48,6 +48,24 @@ export const DEFAULT_MODES: Record<WorkoutMode, ModeConfig> = {
   },
 };
 
+
+/**
+ * РЕЖИМ, В КОТОРОМ ДЕНЬ БЫЛ ЛЕГЧЕ ПЛАНА.
+ *
+ * «Легкая» — это 85% веса и на подход меньше, «Восстановление» — 70% и
+ * примерно половина подходов. Закрыть повторения на таком дне ОЖИДАЕМО: ради
+ * этого режим и выбирают. Судить по нему план — всё равно что мерить силу на
+ * разминке, поэтому прогрессия такие дни не трактует как победу.
+ *
+ * Условие смотрит на сами множители, а не на имя режима: числа режимов
+ * редактируются в настройках, и владелец может сделать «Легкую» какой угодно.
+ */
+export function isEasierThanPlan(mode: ModeConfig): boolean {
+  return (
+    mode.weightMultiplier < 1 || (mode.setsDelta ?? 0) < 0 || (mode.setsMultiplier ?? 1) < 1
+  );
+}
+
 export const MODE_ORDER: WorkoutMode[] = ['normal', 'light', 'heavy', 'recovery'];
 
 export const MODE_COLOR: Record<WorkoutMode, string> = {

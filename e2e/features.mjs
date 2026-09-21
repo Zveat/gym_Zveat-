@@ -422,6 +422,77 @@ async function main() {
   body = await text();
   check('the entered workout lands in history', has(body, 'Внесено вручную'));
 
+  console.log('\nЛЁГКИЙ ДЕНЬ НЕ ТРЕБУЕТ РЕШЕНИЙ');
+  /*
+   * «Зачем то предлагает корректировать тренировку хотя я выбрал режим
+   * легкая». На лёгком дне вес снижен до 85% и убран подход — закрыть
+   * повторения там ожидаемо. Хуже того, «ПРИНЯТЬ» под зелёным «можно
+   * прибавить» записывало в программу вес, посчитанный от 85%, то есть
+   * удачный лёгкий день ПОНИЖАЛ план.
+   */
+  await page.goto(`${base}/programs`, { waitUntil: 'networkidle' });
+  await page.click('a:has-text("Редактировать")');
+  await page.waitForURL(/\/programs\/editor/);
+  await page.waitForTimeout(400);
+  /*
+   * Сравниваем ВСЕ веса программы до и после, а не одну строку с жимом:
+   * форматирование карточки меняется от режима к режиму и от правок выше по
+   * файлу, а вопрос простой — сдвинулась программа или нет.
+   */
+  // `innerText` отдаёт «50 КГ × 12 × 4»: заглавные делает `text-transform`,
+  // поэтому регулярка без флага `i` не находит здесь ничего.
+  const planWeights = async () => (await text()).match(/\d+(?:\.\d+)? кг × \d+ × \d+/gi) ?? [];
+  const planBefore = await planWeights();
+  check('the program editor lists weights to compare', planBefore.length > 0, String(planBefore.length));
+
+  await page.goto(`${base}/workout/start`, { waitUntil: 'networkidle' });
+  await page.click('button:has-text("Легкая")');
+  await page.waitForSelector('text=Что изменится');
+  await page.click('button:has-text("НАЧАТЬ ТРЕНИРОВКУ")');
+  await page.waitForURL(/\/workout$/);
+  await page.click('a:has-text("Жим штанги лежа")');
+  await page.waitForSelector('button:has-text("СОХРАНИТЬ ПОДХОД")');
+  // В «Легкой» подходов на один меньше, поэтому жмём, пока кнопка есть.
+  for (let i = 0; i < 4; i += 1) {
+    const save = page.locator('button:has-text("СОХРАНИТЬ ПОДХОД")');
+    if (!(await save.count())) break;
+    await save.first().click();
+    const skip = page.locator('button:text-is("ПРОПУСТИТЬ")');
+    if (await skip.count()) await skip.click();
+    await page.waitForTimeout(250);
+  }
+  await page.waitForTimeout(1000);
+  await page.goto(`${base}/workout`, { waitUntil: 'networkidle' });
+  await page.click('button:has-text("ЗАВЕРШИТЬ ТРЕНИРОВКУ")');
+  await page.waitForSelector('text=Завершить тренировку?');
+  await page.click('div[role="dialog"] button:has-text("Завершить")');
+  await page.waitForURL(/\/workout\/review/);
+  await page.waitForSelector('text=Что дальше с весами');
+  body = await text();
+
+  check(
+    'a light day offers no weight change at all',
+    !has(body, 'МОЖНО ПРИБАВИТЬ') && !has(body, 'ПРИНЯТЬ'),
+    body.slice(body.indexOf('Что дальше с весами'), body.indexOf('Что дальше с весами') + 300),
+  );
+  check(
+    'and it says why, naming the mode',
+    has(body, 'Легкая') && has(body, 'легче плана'),
+    body.slice(body.indexOf('Что дальше с весами'), body.indexOf('Что дальше с весами') + 300),
+  );
+
+  // Главное: план после лёгкого дня остался прежним.
+  await page.goto(`${base}/programs`, { waitUntil: 'networkidle' });
+  await page.click('a:has-text("Редактировать")');
+  await page.waitForURL(/\/programs\/editor/);
+  await page.waitForTimeout(400);
+  const planAfter = await planWeights();
+  check(
+    'the light day left the program exactly where it was',
+    planAfter.join('|') === planBefore.join('|'),
+    `до: ${planBefore.slice(0, 3).join(', ')} | после: ${planAfter.slice(0, 3).join(', ')}`,
+  );
+
   console.log('\nRECORDS & SETTINGS');
   await page.goto(`${base}/records`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(500);
