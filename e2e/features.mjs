@@ -1190,6 +1190,75 @@ async function main() {
   body = await text();
   check('the goal counts the imported history', has(body, '/ 100'), '');
 
+  console.log('\nВЕС БЕРЁТСЯ С ПРОШЛОЙ ТРЕНИРОВКИ, КОГДА В ПРОГРАММЕ ЕГО НЕТ');
+  /*
+   * «Че за херня? Почему вес 0?» — подъём EZ-грифа. Веса в программе у него
+   * нет намеренно (в ТЗ его не назвали), а в выгрузке лежат 12/12/12/17 кг за
+   * 15.09. Приложение подставляло ноль, который сохраняется одним тапом и
+   * уезжает в историю навсегда.
+   *
+   * Раздел идёт СРАЗУ ПОСЛЕ импорта: без этой истории проверять нечего.
+   */
+  await page.goto(`${base}/workout/start`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('text=Тренировочный день');
+  await page.click('button:has-text("DAY 2")');
+  await page.click('button:has-text("Легкая")');
+  await page.waitForTimeout(300);
+  await page.click('button:has-text("НАЧАТЬ ТРЕНИРОВКУ")');
+  await page.waitForURL(/\/workout$/);
+  await page.click('a:has-text("Подъем EZ-грифа стоя")');
+  await page.waitForSelector('button:has-text("СОХРАНИТЬ ПОДХОД")');
+  await page.waitForTimeout(400);
+  /*
+   * `textContent` НЕ применяет `text-transform`: на экране «ВЕС», а в DOM
+   * лежит «Вес». Регулярка без `i` не находит здесь ничего, и проверка
+   * получала пустую строку вместо карточки.
+   */
+  const stepperText = () =>
+    page.evaluate(() => {
+      const label = [...document.querySelectorAll('p')].find(
+        (n) => n.children.length === 0 && n.textContent.trim().toLowerCase() === 'вес',
+      );
+      return label?.parentElement?.innerText ?? '';
+    });
+  const ezCard = await stepperText();
+  const ezBody = await text();
+
+  check(
+    'an unset program weight is filled in from the last workout, not left at 0',
+    /(^|\n)12(\n|$)/.test(ezCard) && !/(^|\n)0(\n|$)/.test(ezCard),
+    ezCard.replace(/\n/g, ' / ').slice(0, 160),
+  );
+  check(
+    'and the screen says where that number came from',
+    has(ezBody, 'с прошлой тренировки', '12 кг'),
+    ezBody.slice(ezBody.indexOf('Подход 1'), ezBody.indexOf('Подход 1') + 200),
+  );
+  check(
+    'the plan line admits the program has no weight instead of printing "— кг"',
+    has(ezBody, 'веса в программе нет') && !has(ezBody, 'план — кг'),
+    ezBody.slice(ezBody.indexOf('Подход 1'), ezBody.indexOf('Подход 1') + 120),
+  );
+
+  // Четвёртого подхода в «Легкой» нет, но лестница внутри упражнения должна
+  // сохраняться: прошлый раз третий подход был 12 кг.
+  await page.click('button:has-text("СОХРАНИТЬ ПОДХОД")');
+  const skipEzRest = page.locator('button:text-is("ПРОПУСТИТЬ")');
+  if (await skipEzRest.count()) await skipEzRest.click();
+  await page.waitForTimeout(400);
+  const secondSet = await stepperText();
+  check(
+    'the second set keeps the weight just entered',
+    /(^|\n)12(\n|$)/.test(secondSet),
+    secondSet.replace(/\n/g, ' / ').slice(0, 120),
+  );
+
+  await page.goto(`${base}/workout`, { waitUntil: 'networkidle' });
+  await page.click('button:has-text("ЗАВЕРШИТЬ ТРЕНИРОВКУ")');
+  await page.waitForSelector('text=Завершить тренировку?');
+  await page.click('div[role="dialog"] button:has-text("Завершить")');
+  await page.waitForURL(/\/workout\/review/);
+
   console.log('\nСОСТАВ ТЕЛА: ЧЕМ НАБРАН ВЕС');
   /*
    * Числа из настоящего отчёта весов владельца: 85,2 кг при 26,0% жира

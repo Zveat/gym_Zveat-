@@ -162,18 +162,28 @@ function ExerciseWorkout({ entryId }: { entryId: string | null }) {
    * поставленные 72.5 кг приходилось выставлять заново четыре раза за
    * упражнение. Правила переноса — в `suggestedInput`.
    */
-  useEffect(() => {
-    if (!entry || !targetSet) return;
-    const suggestion = suggestedInput(entry, targetSet);
-    setWeight(suggestion.weight ?? 0);
-    setReps(suggestion.reps);
-    setDifficulty(targetSet.actual?.difficulty ?? null);
-  }, [entry, targetSet]);
-
   const history = useMemo(
     () => (entry ? lastPerformance(sessions, entry.exerciseId, session?.id) : null),
     [sessions, entry, session?.id],
   );
+
+  /*
+   * Прошлая тренировка нужна не только плитке «Прошлый раз»: когда в программе
+   * веса нет (подъём EZ-грифа — вес в ТЗ не назван), подставлять надо её, а не
+   * ноль. Правила — в `suggestedInput`.
+   */
+  const suggestion = useMemo(
+    () => (entry && targetSet ? suggestedInput(entry, targetSet, history?.entry ?? null) : null),
+    [entry, targetSet, history],
+  );
+
+  useEffect(() => {
+    if (!entry || !targetSet || !suggestion) return;
+    setWeight(suggestion.weight ?? 0);
+    setReps(suggestion.reps);
+    setDifficulty(targetSet.actual?.difficulty ?? null);
+  }, [entry, targetSet, suggestion]);
+
   const records = useMemo(
     () =>
       entry
@@ -425,9 +435,17 @@ function ExerciseWorkout({ entryId }: { entryId: string | null }) {
         {targetSet ? (
           <Card className="p-3.5">
             <div className="flex items-baseline justify-between gap-2">
+              {/*
+                «план — кг × 10» читалось как поломка, а это честный пробел:
+                в программе веса действительно нет. Так и пишем, а под строкой
+                говорим, откуда взялось подставленное число.
+              */}
               <p className="tnum text-[12px] text-dim">
-                Подход {targetSet.setNumber} · план {formatWeight(targetSet.plan.weight)} кг ×{' '}
-                {formatRepRange(targetSet.plan.repsMin, targetSet.plan.repsMax)}
+                Подход {targetSet.setNumber} ·{' '}
+                {targetSet.plan.weight === null
+                  ? 'веса в программе нет'
+                  : `план ${formatWeight(targetSet.plan.weight)} кг`}{' '}
+                × {formatRepRange(targetSet.plan.repsMin, targetSet.plan.repsMax)}
               </p>
               {targetSet.setType !== 'normal' ? (
                 <Badge color="var(--status-warning)">{targetSet.setType.replace('_', ' ')}</Badge>
@@ -436,6 +454,20 @@ function ExerciseWorkout({ entryId }: { entryId: string | null }) {
 
             {targetSet.note ? (
               <p className="mt-1 text-[12.5px] text-warn">{targetSet.note}</p>
+            ) : null}
+
+            {/*
+              Откуда взялось число в поле. Без этой строки владелец видел «0 кг»
+              при истории 12–17 кг и не понимал, сломано это или нет. Ноль
+              сохраняется одним тапом и уезжает в историю навсегда, поэтому
+              молчать здесь нельзя.
+            */}
+            {targetSet.plan.weight === null && !targetSet.actual ? (
+              <p className="mt-1 text-[12.5px] leading-relaxed text-dim">
+                {suggestion?.fromLastWorkout
+                  ? `Вес подставлен с прошлой тренировки — ${formatWeight(suggestion.weight ?? 0)} кг. Поправьте, если сегодня другой.`
+                  : 'Вес здесь вводится с нуля: в программе его нет, и прошлых тренировок тоже. Что введёте — станет отправной точкой.'}
+              </p>
             ) : null}
 
             <div className="mt-3 flex flex-col gap-3">
@@ -640,12 +672,21 @@ function ExerciseWorkout({ entryId }: { entryId: string | null }) {
           style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}
         >
           <div className="mx-auto w-full max-w-lg">
+            {/*
+              НОЛЬ НАЗЫВАЕТСЯ ВСЛУХ.
+              История не правится, а «СОХРАНИТЬ ПОДХОД ✓» одинаково выглядит и
+              для 40 кг, и для нуля — тап по привычке записывал бы 0 кг × 10
+              навсегда. Если у упражнения УЖЕ есть вес в истории, ноль почти
+              наверняка означает «не успел ввести», и кнопка это произносит.
+            */}
             <Button variant="primary" size="xl" full onClick={save}>
               {justSaved
                 ? 'ПОДХОД СОХРАНЁН ✓'
-                : targetSet.actual
-                  ? 'ОБНОВИТЬ ПОДХОД ✓'
-                  : 'СОХРАНИТЬ ПОДХОД ✓'}
+                : weight === 0 && (history?.topWeight ?? 0) > 0
+                  ? 'СОХРАНИТЬ 0 КГ'
+                  : targetSet.actual
+                    ? 'ОБНОВИТЬ ПОДХОД ✓'
+                    : 'СОХРАНИТЬ ПОДХОД ✓'}
             </Button>
           </div>
         </div>

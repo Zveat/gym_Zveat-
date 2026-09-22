@@ -684,19 +684,59 @@ const DEFAULT_REPS = 10;
 export function suggestedInput(
   exercise: SessionExercise,
   set: SessionSet,
-): { weight: number | null; reps: number } {
+  lastTime: SessionExercise | null = null,
+): { weight: number | null; reps: number; fromLastWorkout?: boolean } {
   const planReps = set.plan.repsMax ?? set.plan.repsMin ?? DEFAULT_REPS;
 
   // Уже выполненный подход показывает себя, а не догадку.
   if (set.actual) return { weight: set.actual.weight, reps: set.actual.reps };
 
+  /*
+   * КОГДА В ПРОГРАММЕ ВЕСА НЕТ — БЕРЁМ ЕГО С ПРОШЛОЙ ТРЕНИРОВКИ.
+   *
+   * У подъёма EZ-грифа вес в программе не задан намеренно: в ТЗ его не было, и
+   * выдумывать его нельзя. Но подставлялся при этом НОЛЬ, и владелец видел на
+   * первом подходе «0 кг» при истории 12–17 кг в четырёх подходах — то есть
+   * приложение знало ответ и молчало. Хуже: ноль можно сохранить одним тапом,
+   * и он навсегда уедет в историю, которая не правится.
+   *
+   * Берём вес того же по номеру подхода прошлой тренировки: если там была
+   * лестница 12/15/17/17, первый подход и должен начаться с 12, а не с
+   * максимума. Не нашли такой подход — берём рабочий вес прошлого раза.
+   *
+   * Режим (85% в «Легкой») здесь НЕ применяется: множитель существует, чтобы
+   * масштабировать план, а не историю. Умножить историю значило бы показать
+   * число, которое не равно ни плану, ни тому, что человек делал, и объяснить
+   * его на экране нечем. Предсказуемость важнее догадливости.
+   */
+  const fromLastWorkout = (): { weight: number; reps: number } | null => {
+    if (!lastTime) return null;
+    const done = lastTime.sets.filter((s) => s.actual !== null && s.actual.weight > 0);
+    if (!done.length) return null;
+    const sameNumber = done.find((s) => s.setNumber === set.setNumber);
+    const source = sameNumber ?? done[done.length - 1];
+    return { weight: source.actual!.weight, reps: source.actual!.reps };
+  };
+
+  const planned = (): { weight: number | null; reps: number; fromLastWorkout?: boolean } => {
+    if (set.plan.weight !== null) return { weight: set.plan.weight, reps: planReps };
+    const last = fromLastWorkout();
+    if (!last) return { weight: null, reps: planReps };
+    return {
+      weight: last.weight,
+      // Повторения из плана, если план их называет: он и называет — × 10.
+      reps: set.plan.repsMax ?? set.plan.repsMin ?? last.reps,
+      fromLastWorkout: true,
+    };
+  };
+
   const previous = [...exercise.sets]
     .filter((s) => s.setNumber < set.setNumber && s.actual !== null)
     .sort((a, b) => b.setNumber - a.setNumber)[0];
 
-  if (!previous?.actual) return { weight: set.plan.weight, reps: planReps };
-  if (previous.setType !== set.setType) return { weight: set.plan.weight, reps: planReps };
-  if (previous.plan.weight !== set.plan.weight) return { weight: set.plan.weight, reps: planReps };
+  if (!previous?.actual) return planned();
+  if (previous.setType !== set.setType) return planned();
+  if (previous.plan.weight !== set.plan.weight) return planned();
 
   const samePlanReps =
     previous.plan.repsMin === set.plan.repsMin && previous.plan.repsMax === set.plan.repsMax;
